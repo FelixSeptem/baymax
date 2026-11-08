@@ -37,7 +37,7 @@ direct 使用真实 runner/composer（composer.Run/Stream 目前只委托 runner
 | shared-queue child dispatch | 编译拒绝 | 不 enqueue/claim，无关 task 不变 |
 | mailbox_async + compatible manifest/binding | 委托既有 mailbox owner | source-owned message/delivery/lease/retry/DLQ；不创建 worker 或 parent Run |
 | mailbox/resumed/native resume/durable continuation without declared capability | 编译/准入拒绝 | accepted 不等于 completed；相同 run ID 不证明恢复 |
-| team continuation with configured File owner | owner claim/projection only | same-host single-writer sequential reopen；each pause reason needs matching source evidence |
+| team continuation with configured File owner | owner claim/projection only | same-host single-writer sequential reopen；normalized policy digest、settled participant/vote provenance must match on restore；each pause reason needs matching source evidence；policy drift and ambiguous in-flight state fail closed |
 | mailbox lifecycle continuation with configured File owner | lifecycle projection only | message/delivery/lease facts may be restored, but host-handler pause cells and context safe points remain unsupported |
 | mailbox handler continuation with configured File worker/resumer/revalidator | owner-native handler safe point | matching pause cell retains original delivery lineage; bridge delegates and never creates worker/queue/parent Run |
 

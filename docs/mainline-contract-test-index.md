@@ -18,6 +18,8 @@ explicitly enrolled semantics; this page remains the broader contract index.
 
 Direct continuation evidence is implemented by `core/runner/native_continuation*_test.go`, including independent OS-process reopen/restore/duplicate for all three pause reasons and Run/Stream, and by checkpoint store conformance tests in `core/checkpoint`. Workflow-first graph continuation is independently covered by `orchestration/workflow/continuation_test.go`: FileStore sequential reopen, new-Engine source restore, exact duplicate/concurrent conflict convergence, graph/binding/budget/expiry rejection, successor lineage, cancellation terminal evidence, Run/Stream parity, and no legacy checkpoint-store reconstruction. `tool/diagnosticsreplay/workflow_continuation*_test.go` validates only reference fixtures; `scripts/check-workflow-continuation-contract.sh/.ps1` enforce the same source/replay ownership boundary and run from the quality gate. Child/fanout has separate Composer continuation evidence and owner binding; team/mailbox/planbridge resumed remain unsupported and are rejected before activation. Replay fixtures are read-only and are not a substitute for source-process restore tests.
 
+Team parallel/vote continuation is covered by `orchestration/teams/continuation_test.go`: normalized policy digest binding, settled participant/vote provenance, FileStore fresh-process restore, duplicate claims, repeated-pause lineage, Run/Stream parity, and fail-closed policy/provenance validation. `scripts/check-team-continuation-contract.sh/.ps1` is the dedicated gate. The supported profile remains explicit File owner + same-host/single-writer/sequential reopen; memory/unconfigured stores and ambiguous in-flight members remain unsupported or recovery-required. Team evidence does not promote child, workflow, mailbox, or resumed-plan capabilities.
+
 ## Host resume admission revalidation
 
 `host_resume_admission.v1` opt-in guard 已在 source runner 接线；默认关闭，nil verifier fail-closed。公开 API、limits、错误与恢复范围见 [指南](guides/host-resume-admission.md)。以下文件是实际验收入口，完整代码门禁状态以 change verification.md 为准。
@@ -625,3 +627,5 @@ pure replay/drift: `tool/diagnosticsreplay/attention_test.go`;
 dedicated gate: `scripts/check-attention-diagnostics-contract.ps1/.sh`;
 example: `examples/attention-diagnostics`;
 public semantics: [guide](guides/attention-diagnostics.md).
+# Team continuation aggregation policy and fresh-process evidence is owned by
+# `orchestration/teams` and covered by the team continuation contract gate.

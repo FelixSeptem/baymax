@@ -41,7 +41,7 @@
 
 ### Workflow continuation（workflow-first）
 
-当 capability manifest 明确声明 workflow 的 checkpoint、跨进程 restore 和 pause reason evidence 时，宿主可以使用 source-owned workflow continuation。恢复必须绑定原 graph/version/digest、parent/run/session/causation、step dependency、预算与 effect references，并通过 atomic claim；新 Engine 继续原 graph，不重新 Run parent、不重新 enqueue，也不重跑已完成 step/effect。`input_required`、`approval_required` 和 `budget_exhausted` 的 safe point、cancel/timeout/retry 竞争以及 Run/Stream parity 必须由 workflow owner 的 source evidence 支持。team、mailbox 与 planbridge resumed 仍返回 `unsupported_capability`；child/fanout 使用独立的 Composer child-continuation owner，不得借用另一种 owner 的 capability 或 history replay 模拟恢复。
+当 capability manifest 明确声明 workflow 的 checkpoint、跨进程 restore 和 pause reason evidence 时，宿主可以使用 source-owned workflow continuation。恢复必须绑定原 graph/version/digest、parent/run/session/causation、step dependency、预算与 effect references，并通过 atomic claim；新 Engine 继续原 graph，不重新 Run parent、不重新 enqueue，也不重跑已完成 step/effect。`input_required`、`approval_required` 和 `budget_exhausted` 的 safe point、cancel/timeout/retry 竞争以及 Run/Stream parity 必须由 workflow owner 的 source evidence 支持。team continuation 当前独立要求绑定原始策略摘要、投票参与者边界与 tie-break；只有同一 team owner 的 source evidence 和兼容 deployment profile 可支持恢复，不能从 child/workflow capability 推导。mailbox 与 planbridge resumed 仍按各自 owner evidence 独立判断；child/fanout 使用独立的 Composer child-continuation owner，不得借用另一种 owner 的 capability 或 history replay 模拟恢复。
 
 默认部署边界仍是同机单写、持久化后的顺序重开；FileStore 不宣称多写者 CAS、跨机器协调或多实例 resume claim。checkpoint store 不可用、版本不兼容、foreign、stale、conflicting、expired 或 corrupt 时必须在副作用前 fail closed。
 

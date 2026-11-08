@@ -331,8 +331,35 @@ func (e *Engine) ResumeContinuation(ctx context.Context, plan Plan, request Team
 	if err != nil {
 		return Result{}, err
 	}
+	// Checkpoints created before aggregate policy/provenance was sealed are
+	// not safe to replay: restoring them would require guessing the original
+	// terminal arbitration inputs. Keep the old envelope loadable for
+	// inspection, but fail closed before claim or member activation.
+	if continuation.AggregateProvenance.PolicyDigest == "" ||
+		continuation.AggregateProvenance.Digest == "" ||
+		continuation.AggregateProvenance.Strategy == "" ||
+		continuation.AggregateProvenance.VoteTieBreak == "" {
+		return Result{}, ErrTeamContinuationCorrupt
+	}
 	if teamPlanDigest(plan) != continuation.GraphDigest {
 		return Result{}, ErrTeamContinuationForeign
+	}
+	if continuation.AggregateProvenance.PolicyDigest != "" && continuation.AggregateProvenance.PolicyDigest != teamPolicyDigest(plan) {
+		return Result{}, ErrTeamContinuationForeign
+	}
+	if continuation.AggregateProvenance.Strategy != "" && continuation.AggregateProvenance.Strategy != plan.Strategy {
+		return Result{}, ErrTeamContinuationForeign
+	}
+	if continuation.AggregateProvenance.VoteTieBreak != "" && continuation.AggregateProvenance.VoteTieBreak != plan.VoteTieBreak {
+		return Result{}, ErrTeamContinuationForeign
+	}
+	if continuation.AggregateProvenance.PolicyDigest != "" && !sameTeamAggregateProvenance(continuation.AggregateProvenance, teamAggregateProvenance(plan, continuation.Tasks)) {
+		return Result{}, ErrTeamContinuationForeign
+	}
+	for _, task := range continuation.Tasks {
+		if task.Status == TaskStatusRunning {
+			return Result{}, ErrTeamContinuationRecoveryRequired
+		}
 	}
 	plan.continuationPredecessor = continuation.Ref.CheckpointID
 	plan.continuationGeneration = continuation.Generation

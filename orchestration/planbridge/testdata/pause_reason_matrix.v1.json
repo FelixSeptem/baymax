@@ -86,7 +86,11 @@
         "cross_process_restore": true,
         "evidence_references": {
           "checkpoint_creation": "fixture:pause-matrix.v1/team-checkpoint",
-          "cross_process_restore": "fixture:pause-matrix.v1/team-restore"
+          "cross_process_restore": "fixture:pause-matrix.v1/team-restore",
+          "policy_binding": "fixture:pause-matrix.v1/team-policy",
+          "duplicate_claim": "fixture:pause-matrix.v1/team-duplicate",
+          "ambiguous_in_flight": "fixture:pause-matrix.v1/team-ambiguous",
+          "run_stream_parity": "fixture:pause-matrix.v1/team-parity"
         },
         "pause_reason_evidence": {
           "input_required": { "supported": true, "evidence_reference": "fixture:pause-matrix.v1/team-input" },

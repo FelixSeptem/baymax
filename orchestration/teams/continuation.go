@@ -72,6 +72,18 @@ type TeamTaskContinuation struct {
 	OutputDigest    string     `json:"output_digest,omitempty"`
 }
 
+// TeamAggregateProvenance is the bounded, source-owned evidence needed to
+// explain a team aggregate after a fresh-process restore. It contains policy
+// facts and references only; executable runners and member payloads never
+// enter the continuation envelope.
+type TeamAggregateProvenance struct {
+	PolicyDigest       string       `json:"policy_digest,omitempty"`
+	Strategy           Strategy     `json:"strategy,omitempty"`
+	VoteTieBreak       VoteTieBreak `json:"vote_tie_break,omitempty"`
+	ParticipantTaskIDs []string     `json:"participant_task_ids,omitempty"`
+	Digest             string       `json:"digest,omitempty"`
+}
+
 type TeamContinuation struct {
 	Ref                          TeamContinuationRef                     `json:"ref"`
 	TeamID                       string                                  `json:"team_id"`
@@ -87,6 +99,7 @@ type TeamContinuation struct {
 	EffectNamespace              string                                  `json:"effect_namespace"`
 	OccurrenceID                 string                                  `json:"occurrence_id"`
 	Strategy                     Strategy                                `json:"strategy"`
+	AggregateProvenance          TeamAggregateProvenance                 `json:"aggregate_provenance,omitempty"`
 	PauseReason                  TeamPauseReason                         `json:"pause_reason"`
 	Tasks                        []TeamTaskContinuation                  `json:"tasks"`
 	PendingTaskIDs               []string                                `json:"pending_task_ids"`
@@ -118,6 +131,7 @@ func (c TeamContinuation) Detached() TeamContinuation {
 	out := c
 	out.Tasks = append([]TeamTaskContinuation(nil), c.Tasks...)
 	out.PendingTaskIDs = append([]string(nil), c.PendingTaskIDs...)
+	out.AggregateProvenance.ParticipantTaskIDs = append([]string(nil), c.AggregateProvenance.ParticipantTaskIDs...)
 	if c.HostContextBindings != nil {
 		out.HostContextBindings = make(map[string]hostprojection.SourceBinding, len(c.HostContextBindings))
 		for id, binding := range c.HostContextBindings {
@@ -182,6 +196,9 @@ func (c TeamContinuation) validateShape() error {
 	if len(c.HostContextBindings) > teamContinuationMaxEntries {
 		return ErrTeamContinuationMalformed
 	}
+	if err := validateTeamAggregateProvenance(c.AggregateProvenance); err != nil {
+		return err
+	}
 	seen := make(map[string]struct{}, len(c.Tasks))
 	statuses := make(map[string]TaskStatus, len(c.Tasks))
 	for _, task := range c.Tasks {
@@ -212,8 +229,63 @@ func (c TeamContinuation) validateShape() error {
 			return ErrTeamContinuationForeign
 		}
 	}
+	if c.AggregateProvenance.PolicyDigest != "" {
+		if !sameStringSlice(c.AggregateProvenance.ParticipantTaskIDs, settledTaskIDs(c.Tasks)) || c.AggregateProvenance.Digest != teamAggregateDigest(c.AggregateProvenance.PolicyDigest, c.AggregateProvenance.Strategy, c.AggregateProvenance.VoteTieBreak, c.Tasks) {
+			return ErrTeamContinuationCorrupt
+		}
+	}
 	b, err := json.Marshal(c)
 	if err != nil || len(b) > teamContinuationMaxBytes {
+		return ErrTeamContinuationMalformed
+	}
+	return nil
+}
+
+func settledTaskIDs(tasks []TeamTaskContinuation) []string {
+	ids := make([]string, 0, len(tasks))
+	for _, task := range tasks {
+		if task.Status != TaskStatusPending && task.Status != TaskStatusRunning {
+			ids = append(ids, task.TaskID)
+		}
+	}
+	return ids
+}
+
+func sameStringSlice(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func validateTeamAggregateProvenance(provenance TeamAggregateProvenance) error {
+	if provenance.PolicyDigest == "" && provenance.Digest == "" && provenance.Strategy == "" && provenance.VoteTieBreak == "" && len(provenance.ParticipantTaskIDs) == 0 {
+		return nil // legacy envelopes did not carry aggregate provenance
+	}
+	if provenance.PolicyDigest == "" || provenance.Digest == "" || (provenance.Strategy != StrategyParallel && provenance.Strategy != StrategyVote) || (provenance.VoteTieBreak != VoteTieBreakHighestPriority && provenance.VoteTieBreak != VoteTieBreakFirstTaskID) || len(provenance.ParticipantTaskIDs) > teamContinuationMaxEntries {
+		return ErrTeamContinuationMalformed
+	}
+	seen := make(map[string]struct{}, len(provenance.ParticipantTaskIDs))
+	for _, id := range provenance.ParticipantTaskIDs {
+		if id == "" || len(id) > 256 || strings.TrimSpace(id) != id || strings.ContainsAny(id, "\r\n\t") {
+			return ErrTeamContinuationMalformed
+		}
+		if _, ok := seen[id]; ok {
+			return ErrTeamContinuationMalformed
+		}
+		seen[id] = struct{}{}
+	}
+	for _, value := range []string{provenance.PolicyDigest, provenance.Digest} {
+		if len(value) > 256 || strings.TrimSpace(value) != value || strings.ContainsAny(value, "\r\n\t") {
+			return ErrTeamContinuationMalformed
+		}
+	}
+	if !strings.HasPrefix(provenance.PolicyDigest, "sha256:") || !strings.HasPrefix(provenance.Digest, "sha256:") {
 		return ErrTeamContinuationMalformed
 	}
 	return nil
@@ -790,10 +862,32 @@ func validateTeamSuccessor(predecessor TeamContinuation, successor TeamContinuat
 	if successor.Ref.OwnerNamespace != predecessor.Ref.OwnerNamespace || successor.TeamID != predecessor.TeamID || successor.GraphVersion != predecessor.GraphVersion || successor.GraphDigest != predecessor.GraphDigest || successor.RunID != predecessor.RunID || successor.SessionID != predecessor.SessionID || successor.ParentRunID != predecessor.ParentRunID || successor.CausationID != predecessor.CausationID || successor.AuthorityDigest != predecessor.AuthorityDigest || successor.PlanDigest != predecessor.PlanDigest || successor.WriteScopeDigest != predecessor.WriteScopeDigest || successor.EffectNamespace != predecessor.EffectNamespace || successor.OccurrenceID != predecessor.OccurrenceID || successor.Strategy != predecessor.Strategy {
 		return ErrTeamContinuationForeign
 	}
+	if !teamAggregateProvenanceExtends(successor.AggregateProvenance, predecessor.AggregateProvenance) {
+		return ErrTeamContinuationForeign
+	}
 	if successor.Generation != predecessor.Generation+1 || successor.PredecessorCheckpointID != predecessor.Ref.CheckpointID {
 		return ErrTeamContinuationConflict
 	}
 	return nil
+}
+
+func teamAggregateProvenanceExtends(successor, predecessor TeamAggregateProvenance) bool {
+	if predecessor.PolicyDigest == "" {
+		return true
+	}
+	if successor.PolicyDigest != predecessor.PolicyDigest || successor.Strategy != predecessor.Strategy || successor.VoteTieBreak != predecessor.VoteTieBreak {
+		return false
+	}
+	ids := make(map[string]struct{}, len(successor.ParticipantTaskIDs))
+	for _, id := range successor.ParticipantTaskIDs {
+		ids[id] = struct{}{}
+	}
+	for _, id := range predecessor.ParticipantTaskIDs {
+		if _, ok := ids[id]; !ok {
+			return false
+		}
+	}
+	return true
 }
 
 func validateTeamStoredLineage(records map[string]teamContinuationRecord, continuation TeamContinuation) error {
@@ -818,7 +912,7 @@ func (e *Engine) ContinuationCapabilities(context.Context) (types.ContinuationCa
 		return types.ContinuationCapabilities{}, ErrTeamContinuationUnsupported
 	}
 	scope := e.continuations.DeploymentScope()
-	caps := types.ContinuationCapabilities{ProfileVersion: types.NativeContinuationVersion, SourceNamespace: "team", ContractVersion: "baymax.runtime.contract.v1", ModuleRevision: "baymax", APIVersion: "host_runtime_capability_manifest.v1", RetentionPolicy: "source-owned-team-checkpoint", ExpiryPolicy: "checkpoint-expiry", EvidenceReferences: map[string]string{"checkpoint_creation": "test:TestTeamParallelPauseAndFreshProcessResumeRunsOriginalGraph", "cross_process_restore": "test:TestTeamParallelPauseAndFreshProcessResumeRunsOriginalGraph"}, PauseReasonEvidence: map[string]types.PauseReasonCapability{
+	caps := types.ContinuationCapabilities{ProfileVersion: types.NativeContinuationVersion, SourceNamespace: "team", ContractVersion: "baymax.runtime.contract.v1", ModuleRevision: "baymax", APIVersion: "host_runtime_capability_manifest.v1", RetentionPolicy: "source-owned-team-checkpoint", ExpiryPolicy: "checkpoint-expiry", EvidenceReferences: map[string]string{"checkpoint_creation": "test:TestTeamParallelPauseAndFreshProcessResumeRunsOriginalGraph", "cross_process_restore": "test:TestTeamParallelPauseAndFreshProcessResumeRunsOriginalGraph", "policy_binding": "test:TestTeamVoteContinuationRestoresPendingMemberWithoutRerunningSettledVote", "duplicate_claim": "test:TestTeamContinuationFileStoreReopensAndDuplicateClaimConverges", "ambiguous_in_flight": "test:TestTeamResumeRejectsAmbiguousInFlightMemberBeforeClaim", "run_stream_parity": "test:TestTeamVoteContinuationRestoresPendingMemberWithoutRerunningSettledVote"}, PauseReasonEvidence: map[string]types.PauseReasonCapability{
 		"input_required":    {Supported: true, EvidenceReference: "test:TestTeamPauseReasonsPersistAcrossRunAndStream/input_required"},
 		"approval_required": {Supported: true, EvidenceReference: "test:TestTeamPauseReasonsPersistAcrossRunAndStream/approval_required"},
 		"budget_exhausted":  {Supported: true, EvidenceReference: "test:TestTeamPauseReasonsPersistAcrossRunAndStream/budget_exhausted"},
@@ -847,10 +941,96 @@ func teamPlanDigest(plan Plan) string {
 	b, _ := json.Marshal(struct {
 		TeamID, WorkflowID, StepID string
 		Strategy                   Strategy
+		TaskTimeoutNanos           int64
+		ParallelMaxWorkers         int
+		Backpressure               types.BackpressureMode
+		FailurePolicy              FailurePolicy
+		VoteTieBreak               VoteTieBreak
+		TimeoutTerminalStatus      TaskStatus
 		Tasks                      []taskIdentity
-	}{plan.TeamID, plan.WorkflowID, plan.StepID, plan.Strategy, tasks})
+	}{
+		TeamID:                plan.TeamID,
+		WorkflowID:            plan.WorkflowID,
+		StepID:                plan.StepID,
+		Strategy:              plan.Strategy,
+		TaskTimeoutNanos:      plan.TaskTimeout.Nanoseconds(),
+		ParallelMaxWorkers:    plan.ParallelMaxWorkers,
+		Backpressure:          plan.Backpressure,
+		FailurePolicy:         plan.FailurePolicy,
+		VoteTieBreak:          plan.VoteTieBreak,
+		TimeoutTerminalStatus: plan.TimeoutTerminalStatus,
+		Tasks:                 tasks,
+	})
 	h := sha256.Sum256(b)
 	return "sha256:" + hex.EncodeToString(h[:])
+}
+
+func teamPolicyDigest(plan Plan) string {
+	b, _ := json.Marshal(struct {
+		TaskTimeoutNanos      int64
+		ParallelMaxWorkers    int
+		Backpressure          types.BackpressureMode
+		FailurePolicy         FailurePolicy
+		VoteTieBreak          VoteTieBreak
+		TimeoutTerminalStatus TaskStatus
+	}{
+		TaskTimeoutNanos:      plan.TaskTimeout.Nanoseconds(),
+		ParallelMaxWorkers:    plan.ParallelMaxWorkers,
+		Backpressure:          plan.Backpressure,
+		FailurePolicy:         plan.FailurePolicy,
+		VoteTieBreak:          plan.VoteTieBreak,
+		TimeoutTerminalStatus: plan.TimeoutTerminalStatus,
+	})
+	h := sha256.Sum256(b)
+	return "sha256:" + hex.EncodeToString(h[:])
+}
+
+func teamAggregateProvenance(plan Plan, tasks []TeamTaskContinuation) TeamAggregateProvenance {
+	participants := make([]string, 0, len(tasks))
+	for _, task := range tasks {
+		if task.Status == TaskStatusPending || task.Status == TaskStatusRunning {
+			continue
+		}
+		participants = append(participants, task.TaskID)
+	}
+	policyDigest := teamPolicyDigest(plan)
+	digest := teamAggregateDigest(policyDigest, plan.Strategy, plan.VoteTieBreak, tasks)
+	return TeamAggregateProvenance{
+		PolicyDigest:       policyDigest,
+		Strategy:           plan.Strategy,
+		VoteTieBreak:       plan.VoteTieBreak,
+		ParticipantTaskIDs: participants,
+		Digest:             digest,
+	}
+}
+
+func teamAggregateDigest(policyDigest string, strategy Strategy, tieBreak VoteTieBreak, tasks []TeamTaskContinuation) string {
+	settled := make([]TeamTaskContinuation, 0, len(tasks))
+	for _, task := range tasks {
+		if task.Status != TaskStatusPending && task.Status != TaskStatusRunning {
+			settled = append(settled, task)
+		}
+	}
+	b, _ := json.Marshal(struct {
+		PolicyDigest string
+		Strategy     Strategy
+		TieBreak     VoteTieBreak
+		Settled      []TeamTaskContinuation
+	}{PolicyDigest: policyDigest, Strategy: strategy, TieBreak: tieBreak, Settled: settled})
+	h := sha256.Sum256(b)
+	return "sha256:" + hex.EncodeToString(h[:])
+}
+
+func sameTeamAggregateProvenance(a, b TeamAggregateProvenance) bool {
+	if a.PolicyDigest != b.PolicyDigest || a.Strategy != b.Strategy || a.VoteTieBreak != b.VoteTieBreak || a.Digest != b.Digest || len(a.ParticipantTaskIDs) != len(b.ParticipantTaskIDs) {
+		return false
+	}
+	for i := range a.ParticipantTaskIDs {
+		if a.ParticipantTaskIDs[i] != b.ParticipantTaskIDs[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func pendingTaskIDs(plan Plan, records []TaskRecord) []string {
@@ -868,6 +1048,11 @@ func (e *Engine) persistPausedResult(ctx context.Context, plan Plan, records []T
 	if e == nil || e.continuations == nil || strings.TrimSpace(e.continuationNamespace) == "" {
 		return Result{}, ErrTeamContinuationUnsupported
 	}
+	normalizedPlan, err := normalizePlan(plan)
+	if err != nil {
+		return Result{}, err
+	}
+	plan = normalizedPlan
 	now := e.now().UTC()
 	if pause.OriginalDeadline.IsZero() {
 		pause.OriginalDeadline = plan.continuationDeadline
@@ -896,6 +1081,7 @@ func (e *Engine) persistPausedResult(ctx context.Context, plan Plan, records []T
 		tasks = append(tasks, TeamTaskContinuation{TaskID: id, Status: record.Status, Vote: record.Vote, OutputDigest: outputDigest})
 	}
 	pending := pendingTaskIDs(plan, records)
+	provenance := teamAggregateProvenance(plan, tasks)
 	generation := plan.continuationGeneration + 1
 	predecessor := plan.continuationPredecessor
 	if predecessor == "" {
@@ -905,7 +1091,7 @@ func (e *Engine) persistPausedResult(ctx context.Context, plan Plan, records []T
 	if err != nil {
 		return Result{}, err
 	}
-	continuation, err := SealTeamContinuation(TeamContinuation{Ref: TeamContinuationRef{OwnerNamespace: e.continuationNamespace}, TeamID: plan.TeamID, GraphVersion: "v1", GraphDigest: teamPlanDigest(plan), RunID: plan.RunID, SessionID: plan.SessionID, ParentRunID: plan.ParentRunID, CausationID: plan.CausationID, AuthorityDigest: plan.AuthorityDigest, PlanDigest: plan.PlanDigest, WriteScopeDigest: plan.WriteScopeDigest, EffectNamespace: plan.EffectNamespace, OccurrenceID: plan.OccurrenceID, Strategy: plan.Strategy, PauseReason: pause.Reason, Tasks: tasks, PendingTaskIDs: pending, PendingActionReference: pause.PendingActionReference, ConsumedBudget: pause.ConsumedBudget, OriginalDeadline: pause.OriginalDeadline, PredecessorCheckpointID: predecessor, Generation: generation, CreatedAt: now, ExpiresAt: now.Add(24 * time.Hour), HostContextBindings: bindings})
+	continuation, err := SealTeamContinuation(TeamContinuation{Ref: TeamContinuationRef{OwnerNamespace: e.continuationNamespace}, TeamID: plan.TeamID, GraphVersion: "v1", GraphDigest: teamPlanDigest(plan), RunID: plan.RunID, SessionID: plan.SessionID, ParentRunID: plan.ParentRunID, CausationID: plan.CausationID, AuthorityDigest: plan.AuthorityDigest, PlanDigest: plan.PlanDigest, WriteScopeDigest: plan.WriteScopeDigest, EffectNamespace: plan.EffectNamespace, OccurrenceID: plan.OccurrenceID, Strategy: plan.Strategy, AggregateProvenance: provenance, PauseReason: pause.Reason, Tasks: tasks, PendingTaskIDs: pending, PendingActionReference: pause.PendingActionReference, ConsumedBudget: pause.ConsumedBudget, OriginalDeadline: pause.OriginalDeadline, PredecessorCheckpointID: predecessor, Generation: generation, CreatedAt: now, ExpiresAt: now.Add(24 * time.Hour), HostContextBindings: bindings})
 	if err != nil {
 		return Result{}, err
 	}

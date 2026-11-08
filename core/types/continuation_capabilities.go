@@ -129,7 +129,7 @@ func (c ContinuationCapabilities) Validate() error {
 			}
 			delete(want, reason)
 		}
-		if len(want) != 0 || len(c.EvidenceReferences) != 5 {
+		if len(want) != 0 || len(c.EvidenceReferences) < 5 {
 			return fmt.Errorf("continuation source evidence is incomplete")
 		}
 	}
@@ -158,6 +158,17 @@ func (c ContinuationCapabilities) Validate() error {
 	if c.Deployment != (DeploymentScope{}) {
 		if err := c.Deployment.Validate(); err != nil {
 			return fmt.Errorf("continuation deployment scope: %w", err)
+		}
+	}
+	if c.SourceNamespace == "team" {
+		if !c.Deployment.Supported || strings.TrimSpace(c.Deployment.OwnerNamespace) == "" {
+			return fmt.Errorf("team continuation requires supported owner deployment")
+		}
+		for _, dimension := range []string{"policy_binding", "duplicate_claim", "ambiguous_in_flight", "run_stream_parity"} {
+			value := strings.TrimSpace(c.EvidenceReferences[dimension])
+			if value == "" || len(value) > 256 || strings.HasPrefix(value, "package:") {
+				return fmt.Errorf("team continuation evidence for %s is invalid", dimension)
+			}
 		}
 	}
 	return nil

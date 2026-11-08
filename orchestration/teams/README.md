@@ -7,7 +7,10 @@ cross-process continuation implicitly.
 ## Native continuation
 
 Parallel and vote continuation is an explicit owner opt-in through
-`WithTeamContinuationStore`. `FileTeamContinuationStore` supports only
+`WithTeamContinuationStore`. The sealed graph identity binds normalized
+strategy, member/participant identity, failure/backpressure policy, worker
+bound and vote tie-break so a fresh process cannot silently change dispatch or
+winner semantics. `FileTeamContinuationStore` supports only
 same-host, single-writer, sequential reopen. `MemoryTeamContinuationStore` is
 process-local and is never advertised as cross-process restore.
 
@@ -34,8 +37,10 @@ This lineage change adds no configuration keys or defaults, diagnostic schema
 fields, or example runtime paths and markers.
 
 The public capability cell is evidence-gated. A configured owner may promote
-team checkpoint/restore and pause cells; an unconfigured, memory-only or
-incompatible deployment remains `unsupported_capability`/`recovery-required`.
+team checkpoint/restore and pause cells only with matching policy-binding,
+duplicate-claim, ambiguous-in-flight and Run/Stream evidence; an unconfigured,
+memory-only or incompatible deployment remains
+`unsupported_capability`/`recovery-required`.
 Team continuation does not make child, workflow, mailbox or resumed planbridge
 continuation supported.
 
@@ -58,10 +63,12 @@ replacement parent Run.
 
 ## Verification
 
-`continuation_test.go` covers fresh-process reopen, duplicate claim, all three
-pause reasons, Run/Stream parity, pending-member binding, sibling isolation,
-vote aggregate continuity, foreign-binding rejection before claim, and the
-post-resolver deadline fence.
-`scripts/check-team-mailbox-continuation-contract.sh/.ps1` runs team, mailbox
-and planbridge suites and rejects a continuation implementation that constructs
-a second mailbox execution owner.
+`continuation_test.go` covers fresh-process reopen for parallel and vote teams,
+duplicate claim, all three pause reasons, repeated-pause provenance, Run/Stream
+parity, pending-member binding, sibling isolation, vote aggregate continuity,
+foreign-binding rejection before claim, ambiguous in-flight rejection, legacy
+checkpoint fail-closed behavior, and the post-resolver deadline fence.
+`scripts/check-team-continuation-contract.sh/.ps1` runs the team, planbridge
+and core capability suites and checks that policy/provenance and owner evidence
+remain present. Mailbox lifecycle evidence remains covered by its separate
+mailbox continuation gate; it does not make mailbox an Agent checkpoint owner.

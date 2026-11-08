@@ -52,6 +52,7 @@ OpenSpec 状态以 `openspec list --json`、[路线图](docs/development-roadmap
 - `attention-oriented-runtime-diagnostics-projection`（已归档 191）：只读、有界待处理事项投影；分类和行动基于既有诊断及显式 owner 证据。详见 [归档索引](openspec/changes/archive/INDEX.md)。
 - `model-surface-revision-and-bounded-context-contract`（已归档 192）：resolver material 的固定有效 UTF-8 有界准入，以及显式、provider-neutral 的模型可见面 revision/digest/length replay 证据；参见 [归档索引](openspec/changes/archive/INDEX.md)。
 - `child-composer-continuation-contract`（已归档 194）：child checkpoint 已绑定 source cursor，并已验证三类 pause reason 的 fresh-owner 恢复与 capability evidence；声明范围限定为显式 File owner + native history + executor 的 same-host/single-writer/sequential reopen profile，其他 owner 或部署范围仍保持 unsupported。
+- `team-native-continuation-checkpoint-restore`（G 进行中）：补齐 team continuation 对聚合策略、投票参与 provenance 与 tie-break 的恢复绑定；未归档前不扩大当前 capability 声明。
 
 要了解某个历史决策，请从归档索引进入对应 proposal/design/verification；不要把归档记录当作当前进行中的工作。
 

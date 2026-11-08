@@ -32,7 +32,7 @@ func TestTeamContinuationResolvesContextOnlyForBoundPendingMember(t *testing.T) 
 	now := time.Now().UTC()
 	continuation, err := SealTeamContinuation(TeamContinuation{
 		Ref: TeamContinuationRef{OwnerNamespace: "team-owner"}, TeamID: normalized.TeamID, GraphVersion: "v1", GraphDigest: teamPlanDigest(normalized), RunID: normalized.RunID, SessionID: normalized.SessionID, ParentRunID: normalized.ParentRunID, CausationID: normalized.CausationID, AuthorityDigest: normalized.AuthorityDigest, PlanDigest: normalized.PlanDigest, WriteScopeDigest: normalized.WriteScopeDigest, EffectNamespace: normalized.EffectNamespace, OccurrenceID: normalized.OccurrenceID,
-		Strategy: StrategyParallel, PauseReason: TeamPauseInputRequired, Tasks: []TeamTaskContinuation{{TaskID: "settled", Status: TaskStatusSucceeded}, {TaskID: "pending", Status: TaskStatusPending}}, PendingTaskIDs: []string{"pending"}, Generation: 1, CreatedAt: now, ExpiresAt: now.Add(time.Hour),
+		Strategy: StrategyParallel, AggregateProvenance: teamAggregateProvenance(normalized, []TeamTaskContinuation{{TaskID: "settled", Status: TaskStatusSucceeded}, {TaskID: "pending", Status: TaskStatusPending}}), PauseReason: TeamPauseInputRequired, Tasks: []TeamTaskContinuation{{TaskID: "settled", Status: TaskStatusSucceeded}, {TaskID: "pending", Status: TaskStatusPending}}, PendingTaskIDs: []string{"pending"}, Generation: 1, CreatedAt: now, ExpiresAt: now.Add(time.Hour),
 		HostContextBindings: map[string]hostprojection.SourceBinding{"pending": {Form: hostprojection.SourceFormTeam, OwnerNamespace: "team-owner", SourceID: normalized.RunID, NodeID: "pending", ContinuationID: normalized.TeamID, ContinuationDigest: teamPlanDigest(normalized), Generation: 1}},
 	})
 	if err != nil {
@@ -90,6 +90,9 @@ func TestTeamPausePersistsOwnerBoundContextOnlyForPendingMember(t *testing.T) {
 	if len(continuation.HostContextBindings) != 1 || continuation.HostContextBindings["pending"] != want {
 		t.Fatalf("persisted bindings=%#v, want only pending member binding %#v", continuation.HostContextBindings, want)
 	}
+	if continuation.AggregateProvenance.PolicyDigest == "" || continuation.AggregateProvenance.Strategy != StrategyParallel || len(continuation.AggregateProvenance.ParticipantTaskIDs) != 1 || continuation.AggregateProvenance.ParticipantTaskIDs[0] != "settled" || continuation.AggregateProvenance.Digest == "" {
+		t.Fatalf("aggregate provenance=%#v, want settled participant and policy digest", continuation.AggregateProvenance)
+	}
 }
 
 func TestTeamContinuationRejectsForeignMemberProjectionBeforeResolverOrClaim(t *testing.T) {
@@ -112,7 +115,7 @@ func TestTeamContinuationRejectsForeignMemberProjectionBeforeResolverOrClaim(t *
 		Ref: TeamContinuationRef{OwnerNamespace: "team-owner"}, TeamID: normalized.TeamID, GraphVersion: "v1", GraphDigest: teamPlanDigest(normalized),
 		RunID: normalized.RunID, SessionID: normalized.SessionID, ParentRunID: normalized.ParentRunID, CausationID: normalized.CausationID,
 		AuthorityDigest: normalized.AuthorityDigest, PlanDigest: normalized.PlanDigest, WriteScopeDigest: normalized.WriteScopeDigest, EffectNamespace: normalized.EffectNamespace, OccurrenceID: normalized.OccurrenceID,
-		Strategy: StrategyParallel, PauseReason: TeamPauseInputRequired, Tasks: []TeamTaskContinuation{{TaskID: "pending", Status: TaskStatusPending}}, PendingTaskIDs: []string{"pending"},
+		Strategy: StrategyParallel, AggregateProvenance: teamAggregateProvenance(normalized, []TeamTaskContinuation{{TaskID: "pending", Status: TaskStatusPending}}), PauseReason: TeamPauseInputRequired, Tasks: []TeamTaskContinuation{{TaskID: "pending", Status: TaskStatusPending}}, PendingTaskIDs: []string{"pending"},
 		Generation: 1, CreatedAt: now, ExpiresAt: now.Add(time.Hour),
 		HostContextBindings: map[string]hostprojection.SourceBinding{"pending": {Form: hostprojection.SourceFormTeam, OwnerNamespace: "team-owner", SourceID: normalized.RunID, NodeID: "pending", ContinuationID: normalized.TeamID, ContinuationDigest: teamPlanDigest(normalized), Generation: 1}},
 	})
@@ -159,7 +162,7 @@ func TestTeamContextResumeRechecksDeadlineAfterResolver(t *testing.T) {
 	}
 	now := time.Now().UTC()
 	deadline := now.Add(time.Second)
-	continuation, err := SealTeamContinuation(TeamContinuation{Ref: TeamContinuationRef{OwnerNamespace: "team-owner"}, TeamID: normalized.TeamID, GraphVersion: "v1", GraphDigest: teamPlanDigest(normalized), RunID: normalized.RunID, SessionID: normalized.SessionID, ParentRunID: normalized.ParentRunID, CausationID: normalized.CausationID, AuthorityDigest: normalized.AuthorityDigest, PlanDigest: normalized.PlanDigest, WriteScopeDigest: normalized.WriteScopeDigest, EffectNamespace: normalized.EffectNamespace, OccurrenceID: normalized.OccurrenceID, Strategy: StrategyParallel, PauseReason: TeamPauseBudgetExhausted, Tasks: []TeamTaskContinuation{{TaskID: "pending", Status: TaskStatusPending}}, PendingTaskIDs: []string{"pending"}, OriginalDeadline: deadline, Generation: 1, CreatedAt: now, ExpiresAt: now.Add(time.Hour), HostContextBindings: map[string]hostprojection.SourceBinding{"pending": {Form: hostprojection.SourceFormTeam, OwnerNamespace: "team-owner", SourceID: normalized.RunID, NodeID: "pending", ContinuationID: normalized.TeamID, ContinuationDigest: teamPlanDigest(normalized), Generation: 1}}})
+	continuation, err := SealTeamContinuation(TeamContinuation{Ref: TeamContinuationRef{OwnerNamespace: "team-owner"}, TeamID: normalized.TeamID, GraphVersion: "v1", GraphDigest: teamPlanDigest(normalized), RunID: normalized.RunID, SessionID: normalized.SessionID, ParentRunID: normalized.ParentRunID, CausationID: normalized.CausationID, AuthorityDigest: normalized.AuthorityDigest, PlanDigest: normalized.PlanDigest, WriteScopeDigest: normalized.WriteScopeDigest, EffectNamespace: normalized.EffectNamespace, OccurrenceID: normalized.OccurrenceID, Strategy: StrategyParallel, AggregateProvenance: teamAggregateProvenance(normalized, []TeamTaskContinuation{{TaskID: "pending", Status: TaskStatusPending}}), PauseReason: TeamPauseBudgetExhausted, Tasks: []TeamTaskContinuation{{TaskID: "pending", Status: TaskStatusPending}}, PendingTaskIDs: []string{"pending"}, OriginalDeadline: deadline, Generation: 1, CreatedAt: now, ExpiresAt: now.Add(time.Hour), HostContextBindings: map[string]hostprojection.SourceBinding{"pending": {Form: hostprojection.SourceFormTeam, OwnerNamespace: "team-owner", SourceID: normalized.RunID, NodeID: "pending", ContinuationID: normalized.TeamID, ContinuationDigest: teamPlanDigest(normalized), Generation: 1}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -217,7 +220,7 @@ func TestTeamContextResumeKeepsParallelSiblingUnbound(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	continuation, err := SealTeamContinuation(TeamContinuation{Ref: TeamContinuationRef{OwnerNamespace: "team-owner"}, TeamID: normalized.TeamID, GraphVersion: "v1", GraphDigest: teamPlanDigest(normalized), RunID: normalized.RunID, SessionID: normalized.SessionID, ParentRunID: normalized.ParentRunID, CausationID: normalized.CausationID, AuthorityDigest: normalized.AuthorityDigest, PlanDigest: normalized.PlanDigest, WriteScopeDigest: normalized.WriteScopeDigest, EffectNamespace: normalized.EffectNamespace, OccurrenceID: normalized.OccurrenceID, Strategy: StrategyParallel, PauseReason: TeamPauseInputRequired, Tasks: []TeamTaskContinuation{{TaskID: "bound", Status: TaskStatusPending}, {TaskID: "sibling", Status: TaskStatusPending}}, PendingTaskIDs: []string{"bound", "sibling"}, Generation: 1, CreatedAt: now, ExpiresAt: now.Add(time.Hour), HostContextBindings: map[string]hostprojection.SourceBinding{"bound": {Form: hostprojection.SourceFormTeam, OwnerNamespace: "team-owner", SourceID: normalized.RunID, NodeID: "bound", ContinuationID: normalized.TeamID, ContinuationDigest: teamPlanDigest(normalized), Generation: 1}}})
+	continuation, err := SealTeamContinuation(TeamContinuation{Ref: TeamContinuationRef{OwnerNamespace: "team-owner"}, TeamID: normalized.TeamID, GraphVersion: "v1", GraphDigest: teamPlanDigest(normalized), RunID: normalized.RunID, SessionID: normalized.SessionID, ParentRunID: normalized.ParentRunID, CausationID: normalized.CausationID, AuthorityDigest: normalized.AuthorityDigest, PlanDigest: normalized.PlanDigest, WriteScopeDigest: normalized.WriteScopeDigest, EffectNamespace: normalized.EffectNamespace, OccurrenceID: normalized.OccurrenceID, Strategy: StrategyParallel, AggregateProvenance: teamAggregateProvenance(normalized, []TeamTaskContinuation{{TaskID: "bound", Status: TaskStatusPending}, {TaskID: "sibling", Status: TaskStatusPending}}), PauseReason: TeamPauseInputRequired, Tasks: []TeamTaskContinuation{{TaskID: "bound", Status: TaskStatusPending}, {TaskID: "sibling", Status: TaskStatusPending}}, PendingTaskIDs: []string{"bound", "sibling"}, Generation: 1, CreatedAt: now, ExpiresAt: now.Add(time.Hour), HostContextBindings: map[string]hostprojection.SourceBinding{"bound": {Form: hostprojection.SourceFormTeam, OwnerNamespace: "team-owner", SourceID: normalized.RunID, NodeID: "bound", ContinuationID: normalized.TeamID, ContinuationDigest: teamPlanDigest(normalized), Generation: 1}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -295,7 +298,7 @@ func TestTeamVoteContinuationResolvesBoundPendingMemberWithoutRerunningSettledVo
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	continuation, err := SealTeamContinuation(TeamContinuation{Ref: TeamContinuationRef{OwnerNamespace: "team-owner"}, TeamID: normalized.TeamID, GraphVersion: "v1", GraphDigest: teamPlanDigest(normalized), RunID: normalized.RunID, SessionID: normalized.SessionID, ParentRunID: normalized.ParentRunID, CausationID: normalized.CausationID, AuthorityDigest: normalized.AuthorityDigest, PlanDigest: normalized.PlanDigest, WriteScopeDigest: normalized.WriteScopeDigest, EffectNamespace: normalized.EffectNamespace, OccurrenceID: normalized.OccurrenceID, Strategy: StrategyVote, PauseReason: TeamPauseApprovalRequired, Tasks: []TeamTaskContinuation{{TaskID: "settled", Status: TaskStatusSucceeded, Vote: "yes", EffectReference: "effect-settled"}, {TaskID: "pending", Status: TaskStatusPending}}, PendingTaskIDs: []string{"pending"}, Generation: 1, CreatedAt: now, ExpiresAt: now.Add(time.Hour), HostContextBindings: map[string]hostprojection.SourceBinding{"pending": {Form: hostprojection.SourceFormTeam, OwnerNamespace: "team-owner", SourceID: normalized.RunID, NodeID: "pending", ContinuationID: normalized.TeamID, ContinuationDigest: teamPlanDigest(normalized), Generation: 1}}})
+	continuation, err := SealTeamContinuation(TeamContinuation{Ref: TeamContinuationRef{OwnerNamespace: "team-owner"}, TeamID: normalized.TeamID, GraphVersion: "v1", GraphDigest: teamPlanDigest(normalized), RunID: normalized.RunID, SessionID: normalized.SessionID, ParentRunID: normalized.ParentRunID, CausationID: normalized.CausationID, AuthorityDigest: normalized.AuthorityDigest, PlanDigest: normalized.PlanDigest, WriteScopeDigest: normalized.WriteScopeDigest, EffectNamespace: normalized.EffectNamespace, OccurrenceID: normalized.OccurrenceID, Strategy: StrategyVote, AggregateProvenance: teamAggregateProvenance(normalized, []TeamTaskContinuation{{TaskID: "settled", Status: TaskStatusSucceeded, Vote: "yes", EffectReference: "effect-settled"}, {TaskID: "pending", Status: TaskStatusPending}}), PauseReason: TeamPauseApprovalRequired, Tasks: []TeamTaskContinuation{{TaskID: "settled", Status: TaskStatusSucceeded, Vote: "yes", EffectReference: "effect-settled"}, {TaskID: "pending", Status: TaskStatusPending}}, PendingTaskIDs: []string{"pending"}, Generation: 1, CreatedAt: now, ExpiresAt: now.Add(time.Hour), HostContextBindings: map[string]hostprojection.SourceBinding{"pending": {Form: hostprojection.SourceFormTeam, OwnerNamespace: "team-owner", SourceID: normalized.RunID, NodeID: "pending", ContinuationID: normalized.TeamID, ContinuationDigest: teamPlanDigest(normalized), Generation: 1}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -342,7 +345,7 @@ func TestTeamContextResumeRunStreamParity(t *testing.T) {
 			t.Fatal(err)
 		}
 		now := time.Now().UTC()
-		continuation, err := SealTeamContinuation(TeamContinuation{Ref: TeamContinuationRef{OwnerNamespace: "team-owner"}, TeamID: normalized.TeamID, GraphVersion: "v1", GraphDigest: teamPlanDigest(normalized), RunID: normalized.RunID, SessionID: normalized.SessionID, ParentRunID: normalized.ParentRunID, CausationID: normalized.CausationID, AuthorityDigest: normalized.AuthorityDigest, PlanDigest: normalized.PlanDigest, WriteScopeDigest: normalized.WriteScopeDigest, EffectNamespace: normalized.EffectNamespace, OccurrenceID: normalized.OccurrenceID, Strategy: StrategyParallel, PauseReason: TeamPauseInputRequired, Tasks: []TeamTaskContinuation{{TaskID: "pending", Status: TaskStatusPending}}, PendingTaskIDs: []string{"pending"}, Generation: 1, CreatedAt: now, ExpiresAt: now.Add(time.Hour), HostContextBindings: map[string]hostprojection.SourceBinding{"pending": {Form: hostprojection.SourceFormTeam, OwnerNamespace: "team-owner", SourceID: normalized.RunID, NodeID: "pending", ContinuationID: normalized.TeamID, ContinuationDigest: teamPlanDigest(normalized), Generation: 1}}})
+		continuation, err := SealTeamContinuation(TeamContinuation{Ref: TeamContinuationRef{OwnerNamespace: "team-owner"}, TeamID: normalized.TeamID, GraphVersion: "v1", GraphDigest: teamPlanDigest(normalized), RunID: normalized.RunID, SessionID: normalized.SessionID, ParentRunID: normalized.ParentRunID, CausationID: normalized.CausationID, AuthorityDigest: normalized.AuthorityDigest, PlanDigest: normalized.PlanDigest, WriteScopeDigest: normalized.WriteScopeDigest, EffectNamespace: normalized.EffectNamespace, OccurrenceID: normalized.OccurrenceID, Strategy: StrategyParallel, AggregateProvenance: teamAggregateProvenance(normalized, []TeamTaskContinuation{{TaskID: "pending", Status: TaskStatusPending}}), PauseReason: TeamPauseInputRequired, Tasks: []TeamTaskContinuation{{TaskID: "pending", Status: TaskStatusPending}}, PendingTaskIDs: []string{"pending"}, Generation: 1, CreatedAt: now, ExpiresAt: now.Add(time.Hour), HostContextBindings: map[string]hostprojection.SourceBinding{"pending": {Form: hostprojection.SourceFormTeam, OwnerNamespace: "team-owner", SourceID: normalized.RunID, NodeID: "pending", ContinuationID: normalized.TeamID, ContinuationDigest: teamPlanDigest(normalized), Generation: 1}}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -487,6 +490,137 @@ func TestTeamContinuationFileStoreReopensAndDuplicateClaimConverges(t *testing.T
 	duplicate, err := reopened.ClaimResume(ctx, req)
 	if !errors.Is(err, ErrTeamContinuationInProgress) || !duplicate.Duplicate || duplicate.AttemptID != first.AttemptID {
 		t.Fatalf("ClaimResume(duplicate) = %#v, %v", duplicate, err)
+	}
+}
+
+func TestTeamContinuationRejectsCorruptAggregateProvenance(t *testing.T) {
+	now := time.Now().UTC()
+	plan, err := normalizePlan(Plan{
+		RunID: "run-provenance", SessionID: "session-provenance", ParentRunID: "parent", CausationID: "cause",
+		AuthorityDigest: "authority", PlanDigest: "plan", WriteScopeDigest: "scope", EffectNamespace: "effects", OccurrenceID: "occurrence",
+		TeamID: "team-provenance", Strategy: StrategyVote, Tasks: []Task{
+			{TaskID: "settled", AgentID: "agent-a", Role: RoleWorker, Runner: TaskRunnerFunc(func(context.Context, Task) (TaskResult, error) { return TaskResult{}, nil })},
+			{TaskID: "pending", AgentID: "agent-b", Role: RoleWorker, Runner: TaskRunnerFunc(func(context.Context, Task) (TaskResult, error) { return TaskResult{}, nil })},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	continuation, err := SealTeamContinuation(TeamContinuation{
+		Ref: TeamContinuationRef{OwnerNamespace: "team-owner"}, TeamID: plan.TeamID, GraphVersion: "v1", GraphDigest: teamPlanDigest(plan),
+		RunID: plan.RunID, SessionID: plan.SessionID, ParentRunID: plan.ParentRunID, CausationID: plan.CausationID,
+		AuthorityDigest: plan.AuthorityDigest, PlanDigest: plan.PlanDigest, WriteScopeDigest: plan.WriteScopeDigest, EffectNamespace: plan.EffectNamespace, OccurrenceID: plan.OccurrenceID,
+		Strategy: plan.Strategy, AggregateProvenance: teamAggregateProvenance(plan, []TeamTaskContinuation{{TaskID: "settled", Status: TaskStatusSucceeded, Vote: "yes"}, {TaskID: "pending", Status: TaskStatusPending}}),
+		PauseReason: TeamPauseApprovalRequired, Tasks: []TeamTaskContinuation{{TaskID: "settled", Status: TaskStatusSucceeded, Vote: "yes"}, {TaskID: "pending", Status: TaskStatusPending}}, PendingTaskIDs: []string{"pending"},
+		Generation: 1, CreatedAt: now, ExpiresAt: now.Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	continuation.AggregateProvenance.ParticipantTaskIDs[0] = "pending"
+	if err := continuation.Validate(); !errors.Is(err, ErrTeamContinuationCorrupt) {
+		t.Fatalf("Validate() error=%v, want corrupt provenance", err)
+	}
+}
+
+func TestTeamPlanDigestBindsNormalizedExecutionPolicies(t *testing.T) {
+	base, err := normalizePlan(Plan{TeamID: "team-policy-digest", Strategy: StrategyVote, Tasks: []Task{{TaskID: "member", AgentID: "agent", Role: RoleWorker, Runner: TaskRunnerFunc(func(context.Context, Task) (TaskResult, error) { return TaskResult{}, nil })}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	baseDigest := teamPlanDigest(base)
+	for name, mutate := range map[string]func(*Plan){
+		"tie-break":      func(p *Plan) { p.VoteTieBreak = VoteTieBreakFirstTaskID },
+		"failure-policy": func(p *Plan) { p.FailurePolicy = FailurePolicyFailFast },
+		"backpressure":   func(p *Plan) { p.Backpressure = types.BackpressureReject },
+		"worker-bound":   func(p *Plan) { p.ParallelMaxWorkers++ },
+		"timeout":        func(p *Plan) { p.TaskTimeout++ },
+		"timeout-status": func(p *Plan) { p.TimeoutTerminalStatus = TaskStatusFailed },
+	} {
+		t.Run(name, func(t *testing.T) {
+			changed := base
+			mutate(&changed)
+			if got := teamPlanDigest(changed); got == baseDigest {
+				t.Fatalf("teamPlanDigest did not bind %s", name)
+			}
+		})
+	}
+}
+
+func TestTeamResumeRejectsAmbiguousInFlightMemberBeforeClaim(t *testing.T) {
+	store, err := NewFileTeamContinuationStore(filepath.Join(t.TempDir(), "ambiguous.json"), "team-owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	plan := Plan{RunID: "run-ambiguous", SessionID: "session-ambiguous", TeamID: "team-ambiguous", Strategy: StrategyParallel, Tasks: []Task{{TaskID: "member", AgentID: "agent", Role: RoleWorker, Runner: TaskRunnerFunc(func(context.Context, Task) (TaskResult, error) {
+		t.Fatal("ambiguous member activated")
+		return TaskResult{}, nil
+	})}}}
+	normalized, err := normalizePlan(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	continuation, err := SealTeamContinuation(TeamContinuation{Ref: TeamContinuationRef{OwnerNamespace: "team-owner"}, TeamID: normalized.TeamID, GraphVersion: "v1", GraphDigest: teamPlanDigest(normalized), RunID: normalized.RunID, SessionID: normalized.SessionID, Strategy: normalized.Strategy, AggregateProvenance: teamAggregateProvenance(normalized, []TeamTaskContinuation{{TaskID: "member", Status: TaskStatusRunning}}), PauseReason: TeamPauseInputRequired, Tasks: []TeamTaskContinuation{{TaskID: "member", Status: TaskStatusRunning}}, Generation: 1, CreatedAt: now, ExpiresAt: now.Add(time.Hour)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Save(context.Background(), continuation); err != nil {
+		t.Fatal(err)
+	}
+	request := TeamResumeRequest{Ref: continuation.Ref, GraphDigest: continuation.GraphDigest, Generation: continuation.Generation, Strategy: continuation.Strategy, IdempotencyKey: "resume-ambiguous", Deployment: types.DeploymentRequest{OwnerNamespace: "team-owner", WriterFence: "fence:team-owner"}}
+	engine := New(WithTeamContinuationStore(store, "team-owner"))
+	if _, err := engine.ResumeContinuation(context.Background(), plan, request, nil); !errors.Is(err, ErrTeamContinuationRecoveryRequired) {
+		t.Fatalf("ResumeContinuation() error=%v, want recovery required", err)
+	}
+	claim, err := store.ClaimResume(context.Background(), request)
+	if err != nil || claim.Duplicate {
+		t.Fatalf("ambiguous restore claimed continuation before rejection: claim=%#v err=%v", claim, err)
+	}
+}
+
+func TestTeamResumeRejectsLegacyCheckpointWithoutAggregateProvenance(t *testing.T) {
+	store, err := NewFileTeamContinuationStore(filepath.Join(t.TempDir(), "legacy-provenance.json"), "team-owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	plan := Plan{RunID: "run-legacy-provenance", SessionID: "session-legacy-provenance", TeamID: "team-legacy-provenance", Strategy: StrategyVote, Tasks: []Task{{TaskID: "pending", AgentID: "agent", Role: RoleWorker, Runner: TaskRunnerFunc(func(context.Context, Task) (TaskResult, error) {
+		t.Fatal("legacy checkpoint activated a member")
+		return TaskResult{}, nil
+	})}}}
+	normalized, err := normalizePlan(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// This models a persisted checkpoint created before aggregate policy and
+	// participant provenance became mandatory continuation evidence.
+	continuation, err := SealTeamContinuation(TeamContinuation{
+		Ref: TeamContinuationRef{OwnerNamespace: "team-owner"}, TeamID: normalized.TeamID,
+		GraphVersion: "v1", GraphDigest: teamPlanDigest(normalized), RunID: normalized.RunID,
+		SessionID: normalized.SessionID, Strategy: normalized.Strategy,
+		PauseReason: TeamPauseInputRequired,
+		Tasks:       []TeamTaskContinuation{{TaskID: "pending", Status: TaskStatusPending}}, PendingTaskIDs: []string{"pending"},
+		Generation: 1, CreatedAt: now, ExpiresAt: now.Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Save(context.Background(), continuation); err != nil {
+		t.Fatal(err)
+	}
+	request := TeamResumeRequest{
+		Ref: continuation.Ref, GraphDigest: continuation.GraphDigest, Generation: continuation.Generation,
+		Strategy: continuation.Strategy, IdempotencyKey: "resume-legacy-provenance",
+		Deployment: types.DeploymentRequest{OwnerNamespace: "team-owner", WriterFence: "fence:team-owner"},
+	}
+	engine := New(WithTeamContinuationStore(store, "team-owner"))
+	if _, err := engine.ResumeContinuation(context.Background(), plan, request, nil); !errors.Is(err, ErrTeamContinuationCorrupt) {
+		t.Fatalf("ResumeContinuation() error=%v, want corrupt legacy checkpoint", err)
+	}
+	claim, err := store.ClaimResume(context.Background(), request)
+	if err != nil || claim.Duplicate {
+		t.Fatalf("legacy checkpoint was claimed before rejection: claim=%#v err=%v", claim, err)
 	}
 }
 
@@ -659,6 +793,9 @@ func TestTeamResumeContinuationCreatesSuccessorCheckpointOnSecondPause(t *testin
 	}
 	if secondContinuation.Generation != firstContinuation.Generation+1 || secondContinuation.PredecessorCheckpointID != firstContinuation.Ref.CheckpointID {
 		t.Fatalf("successor=%#v first=%#v", secondContinuation, firstContinuation)
+	}
+	if !sameTeamAggregateProvenance(secondContinuation.AggregateProvenance, firstContinuation.AggregateProvenance) {
+		t.Fatalf("successor aggregate provenance changed: successor=%#v predecessor=%#v", secondContinuation.AggregateProvenance, firstContinuation.AggregateProvenance)
 	}
 	if secondContinuation.OriginalDeadline != originalDeadline || secondContinuation.ConsumedBudget != firstContinuation.ConsumedBudget {
 		t.Fatalf("successor deadline/budget reset: successor=(%s,%d) predecessor=(%s,%d)", secondContinuation.OriginalDeadline, secondContinuation.ConsumedBudget, firstContinuation.OriginalDeadline, firstContinuation.ConsumedBudget)
@@ -834,7 +971,7 @@ func TestTeamContinuationSuccessorCommitRollsBackOnFileFailure(t *testing.T) {
 }
 
 func TestTeamPauseReasonsPersistAcrossRunAndStream(t *testing.T) {
-	for _, reason := range []TeamPauseReason{TeamPauseApprovalRequired, TeamPauseBudgetExhausted} {
+	for _, reason := range []TeamPauseReason{TeamPauseInputRequired, TeamPauseApprovalRequired, TeamPauseBudgetExhausted} {
 		t.Run(string(reason), func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), string(reason)+".json")
 			store, err := NewFileTeamContinuationStore(path, "team-owner")
@@ -967,7 +1104,7 @@ func TestTeamVoteContinuationRestoresPendingMemberWithoutRerunningSettledVote(t 
 		continuation, err := SealTeamContinuation(TeamContinuation{
 			Ref: TeamContinuationRef{OwnerNamespace: "team-owner"}, TeamID: normalized.TeamID, GraphVersion: "v1", GraphDigest: teamPlanDigest(normalized),
 			RunID: normalized.RunID, SessionID: normalized.SessionID, ParentRunID: normalized.ParentRunID, CausationID: normalized.CausationID, AuthorityDigest: normalized.AuthorityDigest, PlanDigest: normalized.PlanDigest, WriteScopeDigest: normalized.WriteScopeDigest, EffectNamespace: normalized.EffectNamespace, OccurrenceID: normalized.OccurrenceID,
-			Strategy: StrategyVote, PauseReason: TeamPauseApprovalRequired, Tasks: []TeamTaskContinuation{{TaskID: "settled", Status: TaskStatusSucceeded, Vote: "yes", EffectReference: "effect-settled"}, {TaskID: "pending", Status: TaskStatusPending}}, PendingTaskIDs: []string{"pending"},
+			Strategy: StrategyVote, AggregateProvenance: teamAggregateProvenance(normalized, []TeamTaskContinuation{{TaskID: "settled", Status: TaskStatusSucceeded, Vote: "yes", EffectReference: "effect-settled"}, {TaskID: "pending", Status: TaskStatusPending}}), PauseReason: TeamPauseApprovalRequired, Tasks: []TeamTaskContinuation{{TaskID: "settled", Status: TaskStatusSucceeded, Vote: "yes", EffectReference: "effect-settled"}, {TaskID: "pending", Status: TaskStatusPending}}, PendingTaskIDs: []string{"pending"},
 			Generation: 1, CreatedAt: now, ExpiresAt: now.Add(time.Hour),
 		})
 		if err != nil {
@@ -976,8 +1113,23 @@ func TestTeamVoteContinuationRestoresPendingMemberWithoutRerunningSettledVote(t 
 		if err := store.Save(context.Background(), continuation); err != nil {
 			t.Fatal(err)
 		}
+		reopened, err := NewFileTeamContinuationStore(store.path, "team-owner")
+		if err != nil {
+			t.Fatal(err)
+		}
 		request := TeamResumeRequest{Ref: continuation.Ref, GraphDigest: continuation.GraphDigest, Generation: continuation.Generation, Strategy: continuation.Strategy, IdempotencyKey: "resume-vote", AuthorityDigest: continuation.AuthorityDigest, PlanDigest: continuation.PlanDigest, WriteScopeDigest: continuation.WriteScopeDigest, EffectNamespace: continuation.EffectNamespace, OccurrenceID: continuation.OccurrenceID, CausationID: continuation.CausationID, Deployment: types.DeploymentRequest{OwnerNamespace: "team-owner", WriterFence: "fence:team-owner"}}
-		return New(WithTeamContinuationStore(store, "team-owner")), plan, request, &settledRuns
+		return New(WithTeamContinuationStore(reopened, "team-owner")), plan, request, &settledRuns
+	}
+
+	// A continuation must be rejected before any member is activated when a
+	// vote policy changes after the checkpoint was sealed.
+	policyEngine, policyPlan, policyRequest, policySettled := build(t)
+	policyPlan.VoteTieBreak = VoteTieBreakHighestPriority
+	if _, err := policyEngine.ResumeContinuation(context.Background(), policyPlan, policyRequest, nil); !errors.Is(err, ErrTeamContinuationForeign) {
+		t.Fatalf("policy-drift resume error = %v, want foreign continuation", err)
+	}
+	if *policySettled != 0 {
+		t.Fatalf("policy-drift resume activated settled member %d times", *policySettled)
 	}
 
 	runEngine, runPlan, runRequest, runSettled := build(t)

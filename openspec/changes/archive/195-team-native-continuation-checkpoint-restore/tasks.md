@@ -21,7 +21,7 @@
 
 - [x] 4.1 Run focused team/planbridge tests and `git diff --check`.
 - [x] 4.2 Run `go test ./...`, `go test -race ./...`, `golangci-lint run --config .golangci.yml`, `openspec validate --all`, roadmap/documentation/example-impact validators, and all applicable contract gates.
-- [ ] 4.3 Record verification evidence, archive with `scripts/openspec-archive-seq.ps1`, explicitly stage only this change's files, commit, merge into latest `master`, push, verify merged state, and delete the merged branch/worktree.
+- [x] 4.3 Record verification evidence, archive with `scripts/openspec-archive-seq.ps1`, explicitly stage only this change's files, commit, merge into latest `master`, push, verify merged state, and delete the merged branch/worktree.
 
 Verification evidence for 4.2 (2026-11-08): `go test ./...` and `go test -race ./...` passed; `golangci-lint run --config .golangci.yml` reported 0 issues; `pwsh -File scripts/check-quality-gate.ps1` passed all 94 steps (including team continuation, replay, documentation, semantic stability, performance, and vulnerability checks); `openspec validate --all` passed 154/154; roadmap status, example-impact, and documentation-impact validators passed; and `pwsh -File scripts/check-team-continuation-contract.ps1` passed.
 

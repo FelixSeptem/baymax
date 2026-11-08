@@ -46,6 +46,7 @@ go run ./examples/01-chat-minimal
 
 OpenSpec 状态以 `openspec list --json`、[路线图](docs/development-roadmap.md) 和 [归档索引](openspec/changes/archive/INDEX.md) 为准。能力边界和仍不支持的组合也见 [集成能力矩阵](docs/guides/integration.md)，不要从 package 名称或旧的 release snapshot 推断。
 
+- `refresh-upstream-findings-current-pin`（已归档 197）：按当前 Baymax pin 固化 upstream findings、contract evidence 和 provider live-smoke 配置边界；只更新 provenance/证据，不提升 unsupported capability。详见 [归档记录](openspec/changes/archive/197-refresh-upstream-findings-current-pin/)。
 - `role-scoped-runtime-ports-and-owner-index`（已归档 193）：为 resolver material、model surface 与 source adapter 三类既有语义建立可校验的唯一 owner 和证据索引；不收窄 runtime port 或改变运行时行为。详见[归档记录](openspec/changes/archive/193-role-scoped-runtime-ports-and-owner-index/)与[路线图](docs/development-roadmap.md)。
 - `host-authorization-provenance-and-resume-revalidation`（已归档）：宿主恢复授权的可选 provenance 已在 source claim 前重验证 policy 和 source scope，并保留旧版省略字段与取消语义。详见 [归档索引](openspec/changes/archive/INDEX.md)。
 - `source-adapter-lifecycle-contract`（已归档 190）：source-bound 外部投递、有限 disposition、pending evidence 和 cursor-after-commit；参见 [source adapter 指南](docs/guides/source-adapter-lifecycle.md)。
@@ -54,6 +55,7 @@ OpenSpec 状态以 `openspec list --json`、[路线图](docs/development-roadmap
 - `child-composer-continuation-contract`（已归档 194）：child checkpoint 已绑定 source cursor，并已验证三类 pause reason 的 fresh-owner 恢复与 capability evidence；声明范围限定为显式 File owner + native history + executor 的 same-host/single-writer/sequential reopen profile，其他 owner 或部署范围仍保持 unsupported。
 - `team-native-continuation-checkpoint-restore`（已归档 195）：team continuation 已补齐聚合策略、投票参与 provenance 与 tie-break 的恢复绑定；能力声明仍限定为已验证的 same-host profile。
 - `deployable-source-history-store-contract`（已归档 196）：source identity、journal、可选 projection ledger、coordinator 与 deployment scope 已绑定为显式 owner-store profile；跨机器协调和 source/projection 原子提交仍不声明支持。
+- 当前 pin 的 upstream finding 与 Baymax contract evidence 见 [current-pin findings](docs/upstream/baymax-findings.md) 和 [contract evidence matrix](docs/baymax-contract-evidence.md)。该 evidence refresh 只对齐 provenance、部署前提和未验证边界，不提升 `subagent_fanout`、`team_parallel`、`team_vote` 或 mailbox Agent continuation 的 unsupported capability；provider live-smoke 未配置 endpoint/model/key 时保持 `skipped-unconfigured`。
 
 要了解某个历史决策，请从归档索引进入对应 proposal/design/verification；不要把归档记录当作当前进行中的工作。
 

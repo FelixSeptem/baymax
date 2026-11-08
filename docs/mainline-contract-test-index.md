@@ -565,6 +565,22 @@ gates continue to cover callback projection independently. The
 [integration support matrix](guides/integration.md) and [mailbox contract](../orchestration/mailbox/README.md)
 define the retention and terminal-recovery limits.
 
+## Current-pin upstream findings and capability evidence
+
+The provenance record is [`docs/upstream/baymax-findings.md`](upstream/baymax-findings.md)
+and the Baymax-facing matrix is [`docs/baymax-contract-evidence.md`](baymax-contract-evidence.md).
+They are pinned to `v0.0.0-20261103091945-d2e08cd6dc8c`; the older
+`v0.0.0-20261022053159-3d0ab5949790` is historical/legacy provenance only.
+The matrix keeps execution wiring separate from continuation restore, source
+replay/projection reconciliation and provider live-smoke. It records the
+same-host boundary, cross-machine and source/projection non-atomic limits,
+`recovery-required`, `unsupported`, and `skipped-unconfigured` outcomes. The
+dedicated offline gate is
+`scripts/check-upstream-findings-current-pin-contract.ps1/.sh`, and both
+quality paths execute it. Unsupported capability cells remain fail-closed and
+must not be downgraded to direct execution; mailbox lifecycle replay remains
+distinct from Agent continuation ownership.
+
 ## Spec 1 capability manifest and mailbox_async extension
 
 | Requirement | Evidence |

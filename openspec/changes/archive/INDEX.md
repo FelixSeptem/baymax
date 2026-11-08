@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-11-08 18:17:58
+Updated: 2026-11-09 07:49:30
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -198,3 +198,4 @@ Updated: 2026-11-08 18:17:58
 - 194 -> child-composer-continuation-contract
 - 195 -> team-native-continuation-checkpoint-restore
 - 196 -> deployable-source-history-store-contract
+- 197 -> refresh-upstream-findings-current-pin

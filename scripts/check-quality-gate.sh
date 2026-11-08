@@ -72,6 +72,12 @@ if ! bash scripts/check-docs-consistency.sh; then
   exit 1
 fi
 
+echo "[quality-gate] current-pin upstream findings contract"
+if ! bash scripts/check-upstream-findings-current-pin-contract.sh; then
+  echo "[quality-gate][upstream-findings-current-pin] current-pin upstream findings contract failed"
+  exit 1
+fi
+
 echo "[quality-gate] openspec example impact declaration"
 if ! bash scripts/check-openspec-example-impact-declaration.sh; then
   echo "[quality-gate][openspec-example-impact-declaration] openspec example impact declaration failed"

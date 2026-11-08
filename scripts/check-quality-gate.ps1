@@ -508,6 +508,10 @@ try {
             pwsh -File scripts/check-docs-consistency.ps1
         }
 
+        Invoke-RequiredStep -StepLabel "[quality-gate] current-pin upstream findings contract" -Command {
+            pwsh -File scripts/check-upstream-findings-current-pin-contract.ps1
+        }
+
         Invoke-RequiredStep -StepLabel "[quality-gate] openspec example impact declaration" -Command {
             pwsh -File scripts/check-openspec-example-impact-declaration.ps1
         }
@@ -553,6 +557,10 @@ Invoke-RequiredStep -StepLabel "[quality-gate] repo hygiene" -Command {
 
 Invoke-RequiredStep -StepLabel "[quality-gate] docs consistency" -Command {
     pwsh -File scripts/check-docs-consistency.ps1
+}
+
+Invoke-RequiredStep -StepLabel "[quality-gate] current-pin upstream findings contract" -Command {
+    pwsh -File scripts/check-upstream-findings-current-pin-contract.ps1
 }
 
 Invoke-RequiredStep -StepLabel "[quality-gate] openspec example impact declaration" -Command {

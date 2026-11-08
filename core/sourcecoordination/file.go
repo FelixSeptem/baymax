@@ -148,7 +148,7 @@ func (f *File) DeploymentScope() types.DeploymentScope {
 	if f == nil {
 		return types.DefaultDeploymentScope("source-coordinator", "source coordinator is unavailable")
 	}
-	return types.CoordinatedMultiWriterScope(f.opts.OwnerNamespace, "fixture:durable-source-store-coordination.v1")
+	return types.CoordinatedMultiInstanceScope(f.opts.OwnerNamespace, "fixture:durable-source-store-coordination.v1")
 }
 
 func (f *File) Close() error {

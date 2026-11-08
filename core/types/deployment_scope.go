@@ -114,6 +114,27 @@ func CoordinatedMultiWriterScope(owner, evidence string) DeploymentScope {
 	}
 }
 
+// CoordinatedMultiInstanceScope identifies the evidence-backed local profile
+// implemented by file coordinators: multiple processes may contend through a
+// source-owner fence, but cross-machine coordination is not implied.
+func CoordinatedMultiInstanceScope(owner, evidence string) DeploymentScope {
+	owner = strings.TrimSpace(owner)
+	if owner == "" {
+		owner = "source-owner"
+	}
+	return DeploymentScope{
+		Version:           DeploymentScopeVersion,
+		Profile:           DeploymentProfileMultiInstance,
+		WriterScope:       WriterScopeMultiWriter,
+		FencingScope:      FencingScopeSourceOwner,
+		TransactionScope:  TransactionScopeMultiWriterCAS,
+		OwnerNamespace:    owner,
+		WriterFence:       "coordinator:" + owner,
+		EvidenceReference: strings.TrimSpace(evidence),
+		Supported:         true,
+	}
+}
+
 func (s DeploymentScope) Validate() error {
 	if s.Version != DeploymentScopeVersion {
 		return fmt.Errorf("deployment scope version: %w", ErrDeploymentUnsupported)
@@ -137,7 +158,7 @@ func (s DeploymentScope) Validate() error {
 		return nil
 	}
 	local := s.Profile == DeploymentProfileSameHostSingleWriterSequentialReopen && s.WriterScope == WriterScopeSingleWriter && s.FencingScope == FencingScopeSourceOwner && s.TransactionScope == TransactionScopeSequentialReopen
-	coordinated := s.Profile == DeploymentProfileMultiInstance && s.WriterScope == WriterScopeMultiWriter && s.FencingScope == FencingScopeDistributed && s.TransactionScope == TransactionScopeMultiWriterCAS
+	coordinated := s.Profile == DeploymentProfileMultiInstance && s.WriterScope == WriterScopeMultiWriter && (s.FencingScope == FencingScopeDistributed || s.FencingScope == FencingScopeSourceOwner) && s.TransactionScope == TransactionScopeMultiWriterCAS
 	if !local && !coordinated {
 		return fmt.Errorf("deployment scope has no source evidence: %w", ErrDeploymentUnsupported)
 	}

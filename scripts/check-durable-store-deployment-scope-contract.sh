@@ -2,7 +2,9 @@
 set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
-export GOCACHE="${GOCACHE:-$repo_root/.gocache-deployment-scope}"
+if [[ -z "${GOCACHE:-}" ]]; then
+  export GOCACHE="$(go env GOCACHE)"
+fi
 echo '[durable-store-deployment-scope] local ownership, fail-closed admission and read-only replay'
 go test ./core/types ./core/sourcecoordination ./core/checkpoint ./core/history ./core/runner ./orchestration/composer ./orchestration/workflow ./orchestration/mailbox ./orchestration/planbridge ./tool/diagnosticsreplay -run 'Test(DeploymentScope|MemoryCoordinator|FileCoordinator|CoordinatedFileStore|CoordinatedJournal|HostExecutionPlan(RejectsUnsupportedDeploymentBeforeActivation|AdmitsOnlyMatchingCoordinatedDeploymentBeforeActivation)|ReplayDeploymentScopeFixture)' -count=1
 for file in core/types/deployment_scope.go tool/diagnosticsreplay/deployment_scope.go; do

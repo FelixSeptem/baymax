@@ -521,11 +521,15 @@ mailbox unified coordination contract 已作为主线（sync/async/delayed/query
 | checkpoint claim rejects unsupported scope before mutation | `core/checkpoint/store_test.go::TestCheckpointClaimRejectsUnsupportedDeploymentBeforeMutation` |
 | planbridge rejects unsupported deployment before source activation | `orchestration/planbridge/compile_test.go::TestHostExecutionPlanRejectsUnsupportedDeploymentBeforeActivation` |
 | reference-only local versus distributed replay and side-effect guard | `tool/diagnosticsreplay/deployment_scope.go`, `tool/diagnosticsreplay/deployment_scope_test.go` |
+| explicit owner-store binding, same-host multi-instance fence/CAS, stable identity duplicate/conflict, bounded replay and reconciliation | `core/history/deployment.go`, `core/history/deployment_test.go`, `core/history/testdata/owner_store_deployment.v1.json` |
+| owner-store shell/PowerShell deployment gate | `scripts/check-source-history-store-contract.sh`, `scripts/check-source-history-store-contract.ps1` |
 | shell/PowerShell quality gates | `scripts/check-durable-store-deployment-scope-contract.sh`, `scripts/check-durable-store-deployment-scope-contract.ps1`, `scripts/check-quality-gate.sh`, `scripts/check-quality-gate.ps1` |
 
-The supported deployment profile is `same_host_single_writer_sequential_reopen`.
-Successful reopen does not evidence multi-writer CAS, cross-machine
-coordination, distributed cursor advancement or multi-instance resume claims.
+The default file-journal profile is `same_host_single_writer_sequential_reopen`.
+An explicit `history.OpenOwnerStore` binding with the file coordinator can
+declare `multi_instance` source-owner fenced CAS on the same host. Neither
+profile evidences cross-machine coordination, distributed cursor advancement,
+atomic external projection, or multi-instance execution-resume claims.
 
 
 
@@ -544,6 +548,7 @@ execution or commit an effect.
 | Requirement | Evidence |
 | --- | --- |
 | bounded detached source/cursor/page DTOs and typed errors | `core/types/native_event_history_test.go`, `core/history/journal_test.go` |
+| deployable owner-store factory, profile rejection, fresh-process reconciliation, duplicate stable identity and stale writer fencing | `core/history/deployment.go`, `core/history/deployment_test.go` |
 | mailbox retention/floor, immutable pages, cursor malformed/foreign/expired/gap/unavailable, FileStore reopen and subprocess restart | `orchestration/mailbox/history_test.go` |
 | source-bound manifest facts; durable versus process-local floor; unsupported forms | `orchestration/planbridge/history_capability_test.go` |
 | adapter stays callback-only and cannot manufacture history identity | `host/eventadapter/history_boundary_test.go` |

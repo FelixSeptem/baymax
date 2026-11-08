@@ -58,7 +58,7 @@ func ReplayDeploymentScopeFixtureJSON(raw []byte) ([]DeploymentScopeReplayResult
 				outcome, reason = "unsupported_capability", "unsupported_deployment_scope"
 			}
 		case string(types.DeploymentProfileMultiInstance):
-			if err := types.CoordinatedMultiWriterScope("fixture-owner", "fixture:durable-source-store-coordination.v1").Check(request); err != nil {
+			if err := types.CoordinatedMultiInstanceScope("fixture-owner", "fixture:durable-source-store-coordination.v1").Check(request); err != nil {
 				outcome, reason = "unsupported_capability", "unsupported_deployment_scope"
 			}
 		case "source_unavailable":

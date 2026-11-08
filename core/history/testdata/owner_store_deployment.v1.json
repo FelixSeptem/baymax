@@ -1,0 +1,12 @@
+{
+  "version": "owner_store_deployment.v1",
+  "cases": [
+    {"name": "unconfigured", "profile": "unsupported", "outcome": "history_unsupported", "side_effects": false},
+    {"name": "same_host_file", "profile": "same_host_single_writer_sequential_reopen", "outcome": "admitted", "side_effects": false},
+    {"name": "same_host_multi_instance", "profile": "multi_instance", "fencing": "source_owner", "transaction": "multi_writer_cas", "outcome": "admitted", "side_effects": false},
+    {"name": "stale_lease", "profile": "multi_instance", "outcome": "stale_writer", "side_effects": false},
+    {"name": "coordinator_outage", "profile": "multi_instance", "outcome": "source_unavailable", "side_effects": false},
+    {"name": "cross_machine_request", "profile": "cross_machine", "outcome": "deployment_unsupported", "side_effects": false},
+    {"name": "projection_non_atomic", "profile": "same_host_single_writer_sequential_reopen", "outcome": "recovery_required", "side_effects": false}
+  ]
+}

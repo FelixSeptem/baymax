@@ -29,3 +29,14 @@ func TestReplayDeploymentScopeFixtureUsesRecordedCoordinatorEvidence(t *testing.
 		t.Fatalf("outcomes = %#v", results)
 	}
 }
+
+func TestReplayDeploymentScopeFixtureRejectsDistributedFencingForLocalCoordinator(t *testing.T) {
+	raw := []byte(`{"version":"deployment_scope_replay.v1","cases":[{"case_id":"local-coordinator","advertised_profile":"multi_instance","requested_profile":"multi_instance","expected_outcome":"admitted","side_effects":0},{"case_id":"distributed-fence","advertised_profile":"multi_instance","requested_profile":"cross_machine","expected_outcome":"unsupported_capability","expected_reason":"unsupported_deployment_scope","side_effects":0}]}`)
+	results, err := ReplayDeploymentScopeFixtureJSON(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if results[0].Outcome != "admitted" || results[1].Outcome != "unsupported_capability" {
+		t.Fatalf("outcomes = %#v", results)
+	}
+}

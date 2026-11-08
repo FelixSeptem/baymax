@@ -153,12 +153,67 @@ func (j *Journal) Append(ctx context.Context, event types.NativeExecutionEvent) 
 	if j.ledgerErr != nil {
 		return types.NativeHistoryIdentity{}, j.ledgerErr
 	}
+	return j.appendLocked(ctx, event, nil)
+}
+
+// AppendIdempotent accepts a previously assigned source identity and converges
+// identical retained facts without allocating a second sequence. It is the
+// append seam used by an explicit OwnerStore binding.
+func (j *Journal) AppendIdempotent(ctx context.Context, event types.NativeExecutionEvent) (types.NativeHistoryIdentity, error) {
+	if err := ctx.Err(); err != nil {
+		return types.NativeHistoryIdentity{}, err
+	}
+	if j == nil {
+		return types.NativeHistoryIdentity{}, types.ErrSourceUnavailable
+	}
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if j.coordinator != nil {
+		if err := j.syncCoordinatorLocked(ctx); err != nil {
+			return types.NativeHistoryIdentity{}, err
+		}
+	}
+	if j.ledgerErr != nil {
+		return types.NativeHistoryIdentity{}, j.ledgerErr
+	}
+	if event.History == nil {
+		return j.appendLocked(ctx, event, nil)
+	}
+	identity := *event.History
+	if identity.Source != j.source || identity.Sequence == 0 || identity.EventID != eventID(j.source, identity.Sequence) || event.Event.EventID != identity.EventID {
+		return types.NativeHistoryIdentity{}, types.ErrHistoryConflict
+	}
+	for _, retained := range j.events {
+		if retained.History == nil || retained.History.EventID != identity.EventID {
+			continue
+		}
+		expected, err := prepareEventForIdentity(event, identity, j)
+		if err != nil {
+			return types.NativeHistoryIdentity{}, err
+		}
+		if !reflect.DeepEqual(retained, expected) {
+			return types.NativeHistoryIdentity{}, types.ErrHistoryConflict
+		}
+		return *retained.History, nil
+	}
+	if identity.Sequence != j.sequence+1 {
+		return types.NativeHistoryIdentity{}, types.ErrHistoryGap
+	}
+	return j.appendLocked(ctx, event, &identity)
+}
+
+func (j *Journal) appendLocked(ctx context.Context, event types.NativeExecutionEvent, expected *types.NativeHistoryIdentity) (types.NativeHistoryIdentity, error) {
 	previousSequence, previousFloor := j.sequence, j.floor
 	previousEvents := append([]types.NativeExecutionEvent(nil), j.events...)
 	j.sequence++
 	identity := types.NativeHistoryIdentity{Source: j.source, Sequence: j.sequence, EventID: eventID(j.source, j.sequence)}
+	if expected != nil {
+		identity = *expected
+	}
 	if event.IsTerminal() {
-		identity.TerminalOutcome = event.SourceState()
+		if identity.TerminalOutcome == "" {
+			identity.TerminalOutcome = event.SourceState()
+		}
 	}
 	// Retained history is a bounded source fact, not an application payload
 	// store. Keep native identity and terminal references while dropping the
@@ -195,6 +250,25 @@ func (j *Journal) Append(ctx context.Context, event types.NativeExecutionEvent) 
 		}
 	}
 	return identity, nil
+}
+
+func prepareEventForIdentity(event types.NativeExecutionEvent, identity types.NativeHistoryIdentity, journal *Journal) (types.NativeExecutionEvent, error) {
+	event.Event.Payload = nil
+	event.History = &identity
+	event.Event.EventID = identity.EventID
+	event.NativeVersion = journal.source.Namespace
+	event.Event.Source = protocolSource(journal.source.Kind)
+	event.Capabilities.Identity = "source_owned"
+	event.Capabilities.Ordering = "source_sequence"
+	event.Capabilities.Cursor = true
+	event.Capabilities.DurableHistory = journal.path != "" || journal.coordinator != nil
+	event.Capabilities.Deduplication = true
+	event.Capabilities.GapVerification = true
+	page, err := (types.NativeEventPage{Events: []types.NativeExecutionEvent{event}}).Snapshot()
+	if err != nil {
+		return types.NativeExecutionEvent{}, err
+	}
+	return page.Events[0], nil
 }
 
 // ReconcileProjection repairs the explicitly bound projection ledger from a

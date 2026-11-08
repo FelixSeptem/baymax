@@ -40,8 +40,8 @@ ensure_writable_cache_env() {
   export "${env_name}=${fallback_path}"
 }
 
-ensure_writable_cache_env "GOCACHE" "${REPO_ROOT}/.gocache"
-ensure_writable_cache_env "GOLANGCI_LINT_CACHE" "${REPO_ROOT}/.gocache/golangci-lint"
+ensure_writable_cache_env "GOCACHE" "$(go env GOCACHE)"
+ensure_writable_cache_env "GOLANGCI_LINT_CACHE" "${GOLANGCI_LINT_CACHE:-$(go env GOCACHE)/golangci-lint}"
 
 if [[ -z "${GOPROXY:-}" ]]; then
   export GOPROXY="https://proxy.golang.org,direct"
@@ -270,6 +270,8 @@ echo "[quality-gate] native event history contract suites"
 bash scripts/check-native-event-history-contract.sh
 echo "[quality-gate] source history projection contract suites"
 bash scripts/check-source-history-projection-contract.sh
+echo "[quality-gate] source history store deployment contract suites"
+bash scripts/check-source-history-store-contract.sh
 echo "[quality-gate] native continuation contract suites"
 bash scripts/check-native-continuation-contract.sh
 echo "[quality-gate] workflow continuation contract suites"

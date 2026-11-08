@@ -43,7 +43,7 @@
 
 当 capability manifest 明确声明 workflow 的 checkpoint、跨进程 restore 和 pause reason evidence 时，宿主可以使用 source-owned workflow continuation。恢复必须绑定原 graph/version/digest、parent/run/session/causation、step dependency、预算与 effect references，并通过 atomic claim；新 Engine 继续原 graph，不重新 Run parent、不重新 enqueue，也不重跑已完成 step/effect。`input_required`、`approval_required` 和 `budget_exhausted` 的 safe point、cancel/timeout/retry 竞争以及 Run/Stream parity 必须由 workflow owner 的 source evidence 支持。team continuation 当前独立要求绑定原始策略摘要、投票参与者边界与 tie-break；只有同一 team owner 的 source evidence 和兼容 deployment profile 可支持恢复，不能从 child/workflow capability 推导。mailbox 与 planbridge resumed 仍按各自 owner evidence 独立判断；child/fanout 使用独立的 Composer child-continuation owner，不得借用另一种 owner 的 capability 或 history replay 模拟恢复。
 
-默认部署边界仍是同机单写、持久化后的顺序重开；FileStore 不宣称多写者 CAS、跨机器协调或多实例 resume claim。checkpoint store 不可用、版本不兼容、foreign、stale、conflicting、expired 或 corrupt 时必须在副作用前 fail closed。
+默认部署边界仍是同机单写、持久化后的顺序重开；`history.OpenOwnerStore` 让 source owner 显式绑定 journal、可选 projection ledger、deployment request 与 coordinator evidence。普通 FileStore 不宣称多写者 CAS、跨机器协调或多实例 resume claim；file coordinator 的 fenced CAS 仅声明同机 multi-instance，不能提升为 cross-machine。checkpoint/store 不可用、版本不兼容、foreign、stale、conflicting、expired 或 corrupt 时必须在副作用前 fail closed。
 
 ### Child/fanout continuation（child-owner phase）
 
@@ -124,6 +124,8 @@ if err != nil { return err }
 `limit` 必须在 1–200；source namespace/ID 各限 1024 UTF-8 bytes，opaque cursor 限 4096 bytes。`nil` cursor 从当前 retention floor 开始，floor 是第一条保留事件之前的 after-position（最后已删除 sequence）；它不证明更早历史完整。`Complete` 只表示当前 retained tail 已读完，并不声明 source 永久停止。
 
 用 `errors.Is` 区分 `ErrHistoryUnsupported`、`ErrCursorMalformed`、`ErrCursorForeign`、`ErrCursorExpired`、`ErrHistoryGap` 与 `ErrSourceUnavailable`；非法 source/page limit 为 `ErrHistoryInvalid`。expiry/gap 可携带安全 floor evidence，但不能静默改读 floor/latest。FileStore 未提交批量写入、持久化失败或 legacy snapshot 缺 history 时 unavailable；读取不隐式 Flush。跨进程 consumer 必须重开同一已持久化 FileStore，再提交原 source 与已确认 cursor。
+
+需要 source journal 与 projection ledger 对账时，owner 必须通过同一个 `OpenOwnerStore` binding 显式提供二者。source append 和 ledger/projection 不是跨库原子事务：source fact 已提交而 ledger 失败时返回 `recovery_required`，fresh process 只能按原 source identity/cursor 进行有界、幂等 reconciliation；不得重跑 Run、Stream、retry、resume、tool、model 或业务 effect。
 
 crash-before-consumer-projection 的恢复是重新读取 source 已保留事实；host 自行以 source-owned history identity 幂等投影并确认 cursor。它不调用模型、工具、handler、Run/Stream、claim/ack/nack、retry、resume 或 restore，不分配新 parent Run，也不改变 delivery、业务 commit 或 checkpoint 状态。并行 source 的顺序仅在各 source 内成立。离线可运行 [示例](../../examples/native-execution-events/README.md) 展示重开 replay、malformed/foreign/expired 与四类 unsupported；[contract index](../mainline-contract-test-index.md) 列出 gap/unavailable 等证据。
 

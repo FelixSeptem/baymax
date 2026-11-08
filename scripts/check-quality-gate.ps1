@@ -51,8 +51,8 @@ function Ensure-WritableCacheEnv {
     Set-Item -Path ("Env:" + $EnvName) -Value $FallbackPath
 }
 
-Ensure-WritableCacheEnv -EnvName "GOCACHE" -FallbackPath (Join-Path $repoRoot ".gocache")
-Ensure-WritableCacheEnv -EnvName "GOLANGCI_LINT_CACHE" -FallbackPath (Join-Path $repoRoot ".gocache/golangci-lint")
+Ensure-WritableCacheEnv -EnvName "GOCACHE" -FallbackPath "D:\GoCache\gocache"
+Ensure-WritableCacheEnv -EnvName "GOLANGCI_LINT_CACHE" -FallbackPath "D:\GoCache\golangci-cache"
 
 if (-not $env:GOPROXY) {
     $env:GOPROXY = "https://proxy.golang.org,direct"
@@ -717,6 +717,10 @@ Invoke-RequiredParallelSteps -Steps @(
     @{
         StepLabel = "[quality-gate] source history projection contract suites"
         Command   = { pwsh -File scripts/check-source-history-projection-contract.ps1 }
+    },
+    @{
+        StepLabel = "[quality-gate] source history store deployment contract suites"
+        Command   = { pwsh -File scripts/check-source-history-store-contract.ps1 }
     },
     @{
         StepLabel = "[quality-gate] native continuation contract suites"

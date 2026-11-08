@@ -10,7 +10,7 @@ Durable continuation 通过 constructor-injected store opt-in，不新增 env/fi
 
 Workflow-first continuation 复用 source-owned checkpoint/store 边界，不新增 workflow 配置键或第二本 graph/checkpoint 账本。只有 capability manifest 有 source evidence 时，`input_required`、`approval_required`、`budget_exhausted` 才可被宣称为 workflow restore 格子；child 使用独立 Composer continuation owner，team/mailbox/planbridge resumed 继续是 `unsupported_capability`。同机单写 FileStore 的顺序重开不等于多写者或跨机器恢复。
 
-Team continuation 使用独立的显式 team owner/store。其恢复摘要必须绑定归一化的成员/调度策略、失败与 backpressure policy、vote tie-break 和参与者 provenance；FileStore 证据范围仍限 same-host、single-writer、sequential reopen。Memory 或未配置 owner 不得声明跨进程恢复；team evidence 不会提升 child、workflow、mailbox 或 resumed-plan capability。
+Team continuation 使用独立的显式 team owner/store。其恢复摘要必须绑定归一化的成员/调度策略、失败与 backpressure policy、vote tie-break 和参与者 provenance；FileStore 证据范围仍限 same-host、single-writer、sequential reopen。`history.OpenOwnerStore` 的 file coordinator profile 可单独声明 same-host multi-instance fenced CAS，但不会提升为跨机器、分布式 transaction 或完整 execution restore。Memory 或未配置 owner 不得声明跨进程恢复；team evidence 不会提升 child、workflow、mailbox 或 resumed-plan capability。
 
 为运行时提供统一配置入口（YAML + Env + Default）、热更新能力，以及仅库接口的诊断查询能力。
 

@@ -1,6 +1,6 @@
 # Development Roadmap
 
-更新时间：2026-11-03
+更新时间：2026-11-09
 
 Baymax 提案发现与实施入口。按状态区确认当前工作，再按候选表判断是否有证据可启动；详细契约、任务和历史证据见 [OpenSpec changes](../openspec/changes/)、[归档索引](../openspec/changes/archive/INDEX.md) 与 [mainline contract test index](mainline-contract-test-index.md)。
 
@@ -16,9 +16,11 @@ Baymax 处于 pre-`1.0.0` 阶段，不做 `1.0.0` / prod-ready 承诺。允许�
   - `child-composer-continuation-contract`（F；归档 194；child continuation 仅在显式 File owner + native history + executor 下声明，验证 profile 仍为 same-host/single-writer/sequential reopen）。
   - `refresh-upstream-findings-current-pin`（归档 197；以当前 pin 固化 upstream findings、Baymax contract evidence、部署边界和 provider live-smoke 的 `skipped-unconfigured` 规则；不提升 unsupported capability）。
 
-- 进行中：无。
+- 进行中：
+  - `mailbox-agent-pause-restore-boundary`（I，已归档）。
 
-I 仍是根据现有 capability evidence 登记的条件候选，不代表已声明支持或已创建 change。
+I 已进入实施：仅显式配置的 continuation worker、durable FileStore、registered resumer/revalidator
+可以声明 Agent handler pause restore；默认 worker 与 lifecycle replay 仍不是 Agent checkpoint owner。
 
 状态唯一来源：active change 以当前分支 `openspec list --json` 为准，已归档 change 以 [archive index](../openspec/changes/archive/INDEX.md) 为准。状态含义：需求触发=缺稳定失败复现；起草中=OpenSpec 尚未满足 `applyRequires`；可实施=owner、复现、部署范围、验证和回滚齐备；已归档=实现、门禁和索引完成。
 
@@ -34,7 +36,7 @@ I 仍是根据现有 capability evidence 登记的条件候选，不代表已声
 | **F / 已归档 194**<br>child/composer continuation public contract | child/subagent/fanout 的执行 wiring、身份和失败传播已有基础；已补齐 child pause-specific continuation evidence，但支持范围仍受 owner/deployment profile 限制。 | `orchestration/composer` 与 child continuation owner；已交付 source-position checkpoint binding、fresh-process evidence、三类 pause cell、stable cursor/retention floor、expired/gap typed error、重复恢复与已完成 effect 不重跑，并将 capability promotion 绑定到显式 File owner + native history + executor。 | 不把 child 执行能力写成跨机器或多写者恢复能力；不得借用 workflow/team/mailbox history 或重新 Run parent 模拟恢复；任一 owner、history 或 executor 证据缺失时 planner 继续返回 `unsupported_capability`，不得降级 direct。 | [child-composer-continuation-contract](../openspec/changes/archive/194-child-composer-continuation-contract/) |
 | **G / 已归档 195**<br>parallel/vote team source-owned checkpoint/restore | team parallel/vote 的并发、成员身份、聚合/投票和失败传播已有基础；已完成恢复摘要绑定完整聚合策略、vote provenance 和部署能力证据。 | `orchestration/teams` owner；已补齐 team policy digest/checkpoint metadata，验证 completed/pending member、投票参与边界、tie-break、duplicate claim、fresh-process restore 与 Run/Stream parity；能力条件明确暴露 same-host 限制。 | 未配置 team source owner/store 时继续 terminal-only/unsupported；不能从 child/workflow 支持推导 team 支持，不能以 mailbox lifecycle 或 history replay 替代 team checkpoint；ambiguous in-flight member 必须 recovery-required/unsupported。 | [team-native-continuation-checkpoint-restore](../openspec/changes/archive/195-team-native-continuation-checkpoint-restore/) |
 | **H / 已归档 196**<br>可部署的 source-owned durable history store contract | 现有 native history 能表达 source identity、sequence、opaque cursor、retention floor 与 bounded replay；FileStore/既有证据仍不足以声明跨机器、多写者、多实例生产恢复。 | `core/history`、runner、child、team、workflow、mailbox source owner；已交付显式 owner-store factory/deployment binding、same-host multi-instance CAS/fencing、stable event identity、幂等 append、bounded `ReadAfter`、retention/expired/gap typed errors 与 crash-before-projection replay/reconciliation；source append 与 Danny projection 不做跨项目事务，改以 source identity/cursor + projection idempotency 明确对账语义。 | 不把 callback EventID、application snapshot 或静态 manifest 当 source history；不声称跨机器协调或 source/projection 原子提交；source store 不可用必须 `recovery-required`，不能从头重跑不确定 effect。 | [deployable-source-history-store-contract](../openspec/changes/archive/196-deployable-source-history-store-contract/) |
-| **I / 条件候选**<br>mailbox lifecycle 与 Agent pause restore 边界 | mailbox 已具备 admission、lease、ack/requeue/DLQ、lifecycle replay 和一次逻辑 admission，但不是 Agent continuation owner；是否需要 mailbox 承载 Agent 任意暂停点恢复尚未定案。 | `orchestration/mailbox` 与真实 execution owner；先由产品明确“只要可靠投递/重试”还是“跨进程 Agent pause restore”。前者仅补齐边界文档和拒绝证据；后者另立 API，绑定 mailbox item/native checkpoint，定义 lease authority 转移、completion/ack/retry/DLQ 与 terminal evidence 关系，禁止 redelivery 重跑 uncertain effect，并保持 mailbox lifecycle cursor 与 Agent event cursor 独立。 | 在产品选择前不得暗中宣称 mailbox continuation；不能用 mailbox replay 模拟 runner/child/team/workflow restore，也不能把 lease reclaim 当 checkpoint claim。 | `mailbox-agent-pause-restore-boundary`（待立项） |
+| **I / 已归档**<br>mailbox Agent pause restore boundary | 现有 `NewContinuationWorker` 的 owner-native handler continuation 已完成三类 pause 的 fresh-process、duplicate、lease/revalidation、terminal-policy 和 completed-effect non-replay 证据。 | `orchestration/mailbox` 继续拥有 message/delivery/lease/attempt/checkpoint/ack/retry/DLQ；显式 FileStore + registered resumer/revalidator 声明 handler safe point，并支持 successor checkpoint lineage。planbridge 只委托既有 worker，不创建 worker/queue/restore loop。 | 仅声明 same-host/single-writer/sequential reopen；不声称跨机器、多写者、多实例 durable restore；默认 `NewWorker`、mailbox history replay、redelivery/lease reclaim 和 planbridge resumed execution 仍 unsupported。 | `2026-11-10-mailbox-agent-pause-restore-boundary` |
 | **J / 已归档 197 证据刷新**<br>upstream findings 与当前 Baymax pin 对齐 | upstream finding 仍记录旧 pin，不能把旧版本结论直接作为当前版本正式复现；当前代码/contract evidence pin 为 `v0.0.0-20261103091945-d2e08cd6dc8c`。 | docs/upstream owner；已以当前 pin 固化 child/team/source-history/mailbox/cancellation/retry 的证据矩阵、部署前提和未验证项；旧 pin 仅作为历史背景，不关闭或迁移结论。 | 不因旧 finding 推断当前版本 bug；无真实 endpoint/model/key 时 live-smoke 保持 `skipped-unconfigured`，不写成 Baymax 代码失败或成功。 | [refresh-upstream-findings-current-pin](../openspec/changes/archive/197-refresh-upstream-findings-current-pin/) |
 
 这些方向来自对 [deepseek-ai/dsh-superagent-prototype](https://github.com/deepseek-ai/dsh-superagent-prototype) 九章设计文档的架构审阅；它们是 Baymax 可借鉴的 owner、恢复、adapter、诊断和模型可见面治理方向，不表示采用其 DeepSeek Harness 控制面、SQLite application runtime、`danger-full-access` worker 或跨 source 身份 prompt 映射。F–J 是当前 Baymax 能力证据中明确暴露的后续候选：执行 wiring 已存在不等于 continuation restore 已支持，source history 可 replay 不等于生产级恢复，mailbox lifecycle replay 不等于 Agent checkpoint owner。后续候选按同一行动卡格式加入本表：触发信号、owner/入口、最小失败复现、首批实施方向、停止线和 OpenSpec slug 缺一不可。新信号先判断能否作为已有 contract 的增量，不为 DTO/API 已存在或 README 描述单独立项。
@@ -52,7 +54,7 @@ I 仍是根据现有 capability evidence 登记的条件候选，不代表已声
 | 5 / F | child/composer continuation public contract | bounded child checkpoint、fresh-process restore、三类 pause cell、cursor retention/gap、effect 不重跑和 manifest promotion evidence。 | 任一 pause cell 缺新进程证据则保持 child/fanout unsupported，不降级 direct。 |
 | 6 / G | parallel/vote team native checkpoint/restore | team/member/aggregate-vote 统一 checkpoint、atomic claim、pending-only restore、vote provenance/tie-break、same-host 条件和 Run/Stream parity。 | 无 team owner/store 或存在 ambiguous in-flight member 时返回 unsupported/recovery-required。 |
 | 7 / H | deployable source history store | owner factory 绑定、多写者 CAS/fencing、幂等 event identity、bounded replay、crash reconciliation 和不可用时 recovery-required。 | 未证明跨机器/多实例部署前提时，只声明已验证的同机 profile。 |
-| 8 / I | mailbox 边界决策 | 可靠投递目标只维护 lifecycle owner；若要求 Agent pause restore，另行定义 checkpoint/lease/terminal binding API。 | 产品目标未确定前不新增隐式 continuation 语义。 |
+| 8 / I | mailbox Agent pause restore boundary | 配置型 handler continuation 的三类 pause、fresh-process restore、successor lineage、terminal/retry/DLQ 投影和 capability/gate 文档。 | 未证明跨机器/多写者/多实例时只保留 same-host profile；不能把 mailbox replay 或 redelivery 当 Agent restore。 |
 | 9 / J | current-pin upstream finding refresh | 以当前 Baymax pin 重做正式复现，更新未验证矩阵和 live-smoke 配置前提。 | 旧 pin 仅作历史记录；无真实 provider 配置时保持 skipped-unconfigured。 |
 
 ## 实施准入与固定边界

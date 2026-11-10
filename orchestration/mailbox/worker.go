@@ -371,7 +371,58 @@ func (w *Worker) ResumeHandlerContinuation(ctx context.Context, req MailboxResum
 	default:
 	}
 	if result.Pause != nil && resumeErr == nil {
-		return HostPlanOutcome{}, ErrMailboxContinuationRecoveryRequired
+		pause := *result.Pause
+		now := w.mailbox.nowTime()
+		if !validMailboxPauseReason(pause.Reason) || strings.TrimSpace(pause.CheckpointReference) == "" || len(pause.CheckpointReference) > 1024 || pause.ExpiresAt.IsZero() {
+			return HostPlanOutcome{}, ErrMailboxContinuationMalformed
+		}
+		if !pause.ExpiresAt.After(now) || pause.ExpiresAt.Sub(now) > 24*time.Hour || (!pause.OriginalDeadline.IsZero() && !pause.OriginalDeadline.After(now)) {
+			return HostPlanOutcome{}, ErrMailboxContinuationExpired
+		}
+		successor, sealErr := SealMailboxContinuation(MailboxContinuation{
+			Ref:                        MailboxContinuationRef{OwnerNamespace: "mailbox", Deployment: continuation.Ref.Deployment},
+			Binding:                    continuation.Binding,
+			MessageID:                  continuation.MessageID,
+			DeliveryID:                 continuation.DeliveryID,
+			LeaseID:                    continuation.LeaseID,
+			ConsumerID:                 continuation.ConsumerID,
+			AttemptCausation:           continuation.AttemptCausation,
+			DeliveryAttempt:            continuation.DeliveryAttempt,
+			LifecycleState:             continuation.LifecycleState,
+			ParentRunID:                continuation.ParentRunID,
+			RunID:                      continuation.RunID,
+			HostCorrelation:            continuation.HostCorrelation,
+			AuthorityDigest:            continuation.AuthorityDigest,
+			PlanDigest:                 continuation.PlanDigest,
+			WriteScope:                 continuation.WriteScope,
+			EffectNamespace:            continuation.EffectNamespace,
+			Occurrence:                 continuation.Occurrence,
+			PauseReason:                pause.Reason,
+			PendingActionReference:     strings.TrimSpace(pause.PendingActionReference),
+			CompletedEffectRefs:        append([]string(nil), pause.CompletedEffectRefs...),
+			HandlerCheckpointReference: strings.TrimSpace(pause.CheckpointReference),
+			ConsumedBudget:             pause.ConsumedBudget,
+			OriginalDeadline:           pause.OriginalDeadline.UTC(),
+			PredecessorCheckpointID:    continuation.Ref.CheckpointID,
+			Generation:                 continuation.Generation + 1,
+			CreatedAt:                  now,
+			ExpiresAt:                  pause.ExpiresAt.UTC(),
+		})
+		if sealErr != nil {
+			return HostPlanOutcome{}, sealErr
+		}
+		outcome, outcomeErr := HostPlanOutcomeFromRecord(record)
+		if outcomeErr != nil {
+			return HostPlanOutcome{}, outcomeErr
+		}
+		outcome.LifecycleResult = "paused"
+		outcome.LifecycleReason = string(pause.Reason)
+		outcome.TerminalOutcome = ""
+		if _, commitErr := w.mailbox.CommitHostPlanResumePause(ctx, claim, successor, outcome); commitErr != nil {
+			return HostPlanOutcome{}, commitErr
+		}
+		outcome.SuccessorContinuation = cloneContinuationRef(successor.Ref)
+		return outcome, nil
 	}
 	if resumeErr != nil {
 		reason := CanonicalizeLifecycleReason(resumeErr.Error(), LifecycleReasonHandlerError)

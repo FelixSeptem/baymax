@@ -755,6 +755,10 @@ Invoke-RequiredParallelSteps -Steps @(
         Command   = { pwsh -File scripts/check-team-mailbox-continuation-contract.ps1 }
     },
     @{
+        StepLabel = "[quality-gate] mailbox Agent pause restore contract suites"
+        Command   = { pwsh -File scripts/check-mailbox-agent-pause-restore-contract.ps1 }
+    },
+    @{
         StepLabel = "[quality-gate] composite pause reason matrix contract suites"
         Command   = { pwsh -File scripts/check-composite-pause-reason-matrix-contract.ps1 }
     },

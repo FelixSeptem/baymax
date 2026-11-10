@@ -88,7 +88,10 @@ requested pause-reason cell. Compile/activation validate these facts before any
 publish, consume, handler call, or claim; then delegate once to the owner.
 Run and Stream share that decision and return its source projection. The bridge
 does not construct a worker/resumer, invoke a handler, renew a lease, or turn a
-lifecycle-only continuation into handler restore.
+lifecycle-only continuation into handler restore. The owner may return a
+successor checkpoint when a resumer pauses again; its generation and
+predecessor are source facts and remain within the same-host/single-writer/
+sequential-reopen scope.
 
 Errors expose `Code`, a safe field path and optional native `Unwrap`, never
 payloads: unsupported_version, invalid_plan, limit_exceeded, binding_mismatch,

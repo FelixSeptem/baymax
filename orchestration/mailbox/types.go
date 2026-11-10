@@ -112,7 +112,11 @@ type HostPlanOutcome struct {
 	LifecycleResult  string       `json:"lifecycle_result"`
 	LifecycleReason  string       `json:"lifecycle_reason,omitempty"`
 	TerminalOutcome  string       `json:"terminal_outcome,omitempty"`
-	Duplicate        bool         `json:"duplicate"`
+	// SuccessorContinuation is populated when a resumed handler reaches another
+	// owner-native pause. It is a reference only; the mailbox remains the
+	// lifecycle and checkpoint owner.
+	SuccessorContinuation *MailboxContinuationRef `json:"successor_continuation,omitempty"`
+	Duplicate             bool                    `json:"duplicate"`
 }
 
 type Record struct {

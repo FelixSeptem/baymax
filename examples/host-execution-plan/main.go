@@ -219,6 +219,80 @@ func main() {
 		panic(fmt.Sprintf("continuation lifecycle: %v", err))
 	}
 	fmt.Println("team-mailbox-continuation-owner-configured")
+
+	// Handler execution restore is a separate owner-native path from the
+	// lifecycle continuation projection exercised above.
+	handlerStorePath := filepath.Join(continuationDir, "handler-mailbox.json")
+	handlerStore, err := mailbox.NewFileStore(handlerStorePath, mailbox.Policy{})
+	if err != nil {
+		panic(err)
+	}
+	handlerOwner, err := mailbox.New(handlerStore)
+	if err != nil {
+		panic(err)
+	}
+	handlerBinding := continuationBinding
+	handlerBinding.MessageID = "offline-handler-message"
+	handlerBinding.IdempotencyKey = "offline-handler-logical"
+	handlerBinding.PlanDigest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	if _, err := handlerOwner.AdmitHostPlan(context.Background(), handlerBinding); err != nil {
+		panic(err)
+	}
+	handlerCalls := 0
+	initialHandler, err := mailbox.NewContinuationWorker(handlerOwner, mailbox.WorkerConfig{Enabled: true}, func(context.Context, mailbox.Record) (mailbox.HandlerResult, error) {
+		handlerCalls++
+		return mailbox.HandlerResult{Pause: &mailbox.HandlerPause{
+			Reason: mailbox.MailboxPauseInputRequired, CheckpointReference: "offline-handler-checkpoint",
+			CompletedEffectRefs: []string{"offline-effect:validated"}, ExpiresAt: time.Now().UTC().Add(time.Hour),
+		}}, nil
+	}, func(context.Context, mailbox.MailboxContinuation, mailbox.Record) (mailbox.HandlerResult, error) {
+		return mailbox.HandlerResult{}, fmt.Errorf("original process resumer unexpectedly invoked")
+	}, func(context.Context, mailbox.MailboxContinuation) error { return nil }, "offline-handler-worker")
+	if err != nil {
+		panic(err)
+	}
+	if processed, err := initialHandler.RunOnce(context.Background()); err != nil || !processed {
+		panic(fmt.Sprintf("handler pause: processed=%v err=%v", processed, err))
+	}
+	handlerSnapshot, err := handlerOwner.Snapshot(context.Background())
+	if err != nil || len(handlerSnapshot.Continuations) != 1 {
+		panic(fmt.Sprintf("handler checkpoint snapshot: %v", err))
+	}
+	var handlerCheckpoint mailbox.MailboxContinuation
+	for _, saved := range handlerSnapshot.Continuations {
+		handlerCheckpoint = saved.Continuation
+	}
+	reopenedHandlerStore, err := mailbox.NewFileStore(handlerStorePath, mailbox.Policy{})
+	if err != nil {
+		panic(err)
+	}
+	reopenedHandlerOwner, err := mailbox.New(reopenedHandlerStore)
+	if err != nil {
+		panic(err)
+	}
+	resumeCalls := 0
+	resumingHandler, err := mailbox.NewContinuationWorker(reopenedHandlerOwner, mailbox.WorkerConfig{Enabled: true}, func(context.Context, mailbox.Record) (mailbox.HandlerResult, error) {
+		panic("fresh handler reran instead of restoring its checkpoint")
+	}, func(_ context.Context, restored mailbox.MailboxContinuation, _ mailbox.Record) (mailbox.HandlerResult, error) {
+		resumeCalls++
+		if restored.Ref.CheckpointID != handlerCheckpoint.Ref.CheckpointID || len(restored.CompletedEffectRefs) != 1 {
+			return mailbox.HandlerResult{}, fmt.Errorf("handler checkpoint identity/effect evidence changed")
+		}
+		return mailbox.HandlerResult{}, nil
+	}, func(context.Context, mailbox.MailboxContinuation) error { return nil }, "offline-handler-worker")
+	if err != nil {
+		panic(err)
+	}
+	handlerResume := mailbox.MailboxResumeRequest{Ref: handlerCheckpoint.Ref, Binding: handlerBinding, IdempotencyKey: "offline-handler-resume", Generation: handlerCheckpoint.Generation, PauseReason: handlerCheckpoint.PauseReason, Deployment: types.DeploymentRequest{OwnerNamespace: "mailbox", WriterFence: "fence:mailbox"}}
+	firstHandlerResult, err := resumingHandler.ResumeHandlerContinuation(context.Background(), handlerResume)
+	if err != nil {
+		panic(err)
+	}
+	duplicateHandlerResult, err := resumingHandler.ResumeHandlerContinuation(context.Background(), handlerResume)
+	if err != nil || firstHandlerResult != duplicateHandlerResult || handlerCalls != 1 || resumeCalls != 1 || firstHandlerResult.TerminalOutcome != "acked" {
+		panic(fmt.Sprintf("handler restore: err=%v handlerCalls=%d resumeCalls=%d", err, handlerCalls, resumeCalls))
+	}
+	fmt.Println("mailbox-handler-pause-restore-evidence")
 	bad := d
 	bad.PlanVersion++
 	bad.SourceFacts["run_id"] = "different"

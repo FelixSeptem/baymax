@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
 	"time"
 
@@ -103,10 +104,11 @@ type MailboxResumeClaim struct {
 }
 
 type MailboxContinuationRecord struct {
-	Continuation MailboxContinuation `json:"continuation"`
-	Claim        *MailboxResumeClaim `json:"claim,omitempty"`
-	Identity     string              `json:"identity,omitempty"`
-	Recovered    bool                `json:"recovered,omitempty"`
+	Continuation          MailboxContinuation `json:"continuation"`
+	Claim                 *MailboxResumeClaim `json:"claim,omitempty"`
+	Identity              string              `json:"identity,omitempty"`
+	Recovered             bool                `json:"recovered,omitempty"`
+	SuccessorCheckpointID string              `json:"successor_checkpoint_id,omitempty"`
 }
 
 func validMailboxPauseReason(r MailboxPauseReason) bool {
@@ -221,6 +223,10 @@ func cloneMailboxContinuationRecords(in map[string]MailboxContinuationRecord) ma
 			x := *v.Claim
 			if v.Claim.Result != nil {
 				y := *v.Claim.Result
+				if v.Claim.Result.SuccessorContinuation != nil {
+					ref := *v.Claim.Result.SuccessorContinuation
+					y.SuccessorContinuation = &ref
+				}
 				x.Result = &y
 			}
 			v.Claim = &x
@@ -471,6 +477,92 @@ func (m *Mailbox) CommitHostPlanResumeResult(ctx context.Context, claim MailboxR
 	return m.mutateHostPlanClaimResult(ctx, claim, result)
 }
 
+// CommitHostPlanResumePause atomically records a successor handler checkpoint
+// and the source pause projection for the claim that produced it. The original
+// delivery remains in flight and no replacement message or worker is created.
+func (m *Mailbox) CommitHostPlanResumePause(ctx context.Context, claim MailboxResumeClaim, successor MailboxContinuation, outcome HostPlanOutcome) (MailboxResumeClaim, error) {
+	if err := successor.Validate(); err != nil {
+		return MailboxResumeClaim{}, err
+	}
+	m.continuationMu.Lock()
+	defer m.continuationMu.Unlock()
+	var updated MailboxResumeClaim
+	err := m.continuationMutate(ctx, func(state *mailboxState) error {
+		record, ok := state.Continuations[claim.Request.Ref.CheckpointID]
+		if !ok || record.Claim == nil || record.Identity != claim.Request.identity() || record.Claim.AttemptID != claim.AttemptID {
+			return ErrMailboxContinuationConflict
+		}
+		if record.Claim.Result != nil {
+			if reflect.DeepEqual(*record.Claim.Result, outcome) {
+				updated = *record.Claim
+				return nil
+			}
+			return ErrMailboxContinuationConflict
+		}
+		if record.Recovered {
+			return ErrMailboxContinuationRecoveryRequired
+		}
+		if record.Claim.State != "claimed" && record.Claim.State != "running" {
+			return ErrMailboxContinuationConflict
+		}
+		if successor.PredecessorCheckpointID != record.Continuation.Ref.CheckpointID || successor.Generation != record.Continuation.Generation+1 {
+			return ErrMailboxContinuationConflict
+		}
+		if !sameMailboxContinuationIdentity(record.Continuation, successor) {
+			return ErrMailboxContinuationForeign
+		}
+		if existing, exists := state.Continuations[successor.Ref.CheckpointID]; exists {
+			if existing.Continuation.Ref.Digest != successor.Ref.Digest {
+				return ErrMailboxContinuationConflict
+			}
+		} else {
+			state.Continuations[successor.Ref.CheckpointID] = MailboxContinuationRecord{Continuation: successor.Detached()}
+		}
+		source := state.Records[successor.MessageID]
+		if source == nil || source.State != StateInFlight || source.DeliveryID != successor.DeliveryID || source.LeaseID != successor.LeaseID || source.AttemptCausation != successor.AttemptCausation || source.ConsumerID != successor.ConsumerID {
+			return ErrMailboxContinuationLeaseLost
+		}
+		source.LeaseExpiresAt = successor.ExpiresAt.UTC()
+		source.LastHeartbeatAt = m.nowTime()
+		source.UpdatedAt = m.nowTime()
+		outcome.SuccessorContinuation = cloneContinuationRef(successor.Ref)
+		saved := outcome
+		record.Claim.Result = &saved
+		record.Claim.State = "completed"
+		record.SuccessorCheckpointID = successor.Ref.CheckpointID
+		state.Continuations[claim.Request.Ref.CheckpointID] = record
+		updated = *record.Claim
+		return nil
+	})
+	return updated, err
+}
+
+func sameMailboxContinuationIdentity(predecessor, successor MailboxContinuation) bool {
+	return reflect.DeepEqual(predecessor.Binding, successor.Binding) &&
+		predecessor.Ref.OwnerNamespace == successor.Ref.OwnerNamespace &&
+		reflect.DeepEqual(predecessor.Ref.Deployment, successor.Ref.Deployment) &&
+		predecessor.MessageID == successor.MessageID &&
+		predecessor.DeliveryID == successor.DeliveryID &&
+		predecessor.LeaseID == successor.LeaseID &&
+		predecessor.ConsumerID == successor.ConsumerID &&
+		predecessor.AttemptCausation == successor.AttemptCausation &&
+		predecessor.DeliveryAttempt == successor.DeliveryAttempt &&
+		predecessor.LifecycleState == successor.LifecycleState &&
+		predecessor.ParentRunID == successor.ParentRunID &&
+		predecessor.RunID == successor.RunID &&
+		predecessor.HostCorrelation == successor.HostCorrelation &&
+		predecessor.AuthorityDigest == successor.AuthorityDigest &&
+		predecessor.PlanDigest == successor.PlanDigest &&
+		predecessor.WriteScope == successor.WriteScope &&
+		predecessor.EffectNamespace == successor.EffectNamespace &&
+		predecessor.Occurrence == successor.Occurrence
+}
+
+func cloneContinuationRef(ref MailboxContinuationRef) *MailboxContinuationRef {
+	copy := ref
+	return &copy
+}
+
 // ResumeHostPlanContinuation claims the existing delivery and returns its
 // current source projection. It does not publish, consume, acknowledge,
 // requeue, retry, or execute a host effect; the existing mailbox owner remains
@@ -526,7 +618,7 @@ func (m *Mailbox) mutateHostPlanClaim(ctx context.Context, claim MailboxResumeCl
 func (m *Mailbox) mutateHostPlanClaimResult(ctx context.Context, claim MailboxResumeClaim, result HostPlanOutcome) (MailboxResumeClaim, error) {
 	return m.mutateHostPlanClaim(ctx, claim, func(record *MailboxContinuationRecord) error {
 		if record.Claim.Result != nil {
-			if *record.Claim.Result == result {
+			if reflect.DeepEqual(*record.Claim.Result, result) {
 				return nil
 			}
 			return ErrMailboxContinuationConflict

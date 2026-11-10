@@ -297,8 +297,11 @@ owner: it seals pre-effect pause references and a registered resumer later
 continues the same message/delivery/lease/attempt after reauthorization. The
 bridge can only delegate that owner-bound path after exact manifest evidence;
 it never creates a handler, worker, lease, retry, or context-injection path.
-Lifecycle-only mailbox continuation and planbridge resumed execution remain
-unsupported for handler execution.
+A resumer pause writes a successor checkpoint with generation and predecessor
+lineage without rerunning completed effects. The supported deployment is
+same-host single-writer sequential reopen; lifecycle-only workers, history
+replay, cross-machine/multi-writer stores and planbridge resumed execution
+remain unsupported.
 
 ### Native history source ownership
 

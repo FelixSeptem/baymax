@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-11-09 07:49:30
+Updated: 2026-11-10 22:01:23
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -199,3 +199,4 @@ Updated: 2026-11-09 07:49:30
 - 195 -> team-native-continuation-checkpoint-restore
 - 196 -> deployable-source-history-store-contract
 - 197 -> refresh-upstream-findings-current-pin
+- 198 -> mailbox-agent-pause-restore-boundary

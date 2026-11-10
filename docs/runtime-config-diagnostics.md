@@ -2317,6 +2317,16 @@ The `session_history_checkpoint_replay.v1` contract exposes bounded additive fie
 Validation failures use deterministic classifications including `session.history_gap`, `session.history_conflict`, `session.checkpoint_association_mismatch`, `session.branch_parent_missing`, `session.replay_conflict`, and `session.replay_side_effect`. Strict restore rejects invalid lineage before mutation; compatible restore is bounded by the existing snapshot compatibility window.
 # Host execution plan bridge limits and diagnostics
 
+## Mailbox handler continuation boundary
+
+The opt-in mailbox handler continuation path adds no environment/file/hot-
+update configuration keys, defaults, QueryRuns fields, or RuntimeRecorder
+diagnostics. Its same-host/single-writer/sequential-reopen scope, pause
+capability and typed admission outcomes are exposed by the mailbox capability
+manifest and owner APIs; they are not runtime configuration or diagnostic
+schema. The dedicated mailbox contract gate and OpenSpec documentation checks
+validate this boundary.
+
 `orchestration/planbridge` has constructor-only `Limits`: descriptor 64 KiB, structural items 128, dependencies 1024, reference 1024 UTF-8 bytes, nesting 8 and copied binding 64 KiB by default. There are no environment, file, hot-update, QueryRuns or diagnostic-schema additions. Limits may only be tightened per construction. Planbridge does not write diagnostics; `RuntimeRecorder` remains the single diagnostic writer. Its offline replay is reference-only and does not execute or resume a run.
 
 Spec 1 additionally exposes a versioned `host_runtime_capability_manifest.v1`

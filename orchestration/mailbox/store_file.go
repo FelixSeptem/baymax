@@ -290,6 +290,20 @@ func (s *FileStore) load() error {
 		return fmt.Errorf("decode mailbox file backend: %w", err)
 	}
 	s.historyCommitted = snapshot.History != nil
+	recoveredClaim := false
+	for key, record := range s.state.Continuations {
+		if record.Claim == nil || record.Claim.Result != nil || (record.Claim.State != "claimed" && record.Claim.State != "running") || record.Recovered {
+			continue
+		}
+		record.Recovered = true
+		s.state.Continuations[key] = record
+		recoveredClaim = true
+	}
+	if recoveredClaim {
+		if err := s.persist(); err != nil {
+			return fmt.Errorf("persist mailbox continuation recovery classification: %w", err)
+		}
+	}
 	return nil
 }
 

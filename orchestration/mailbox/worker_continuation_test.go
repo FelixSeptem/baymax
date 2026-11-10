@@ -145,6 +145,247 @@ func TestContinuationWorkerResumeFreshOwnerInvokesResumerOnceAndAcknowledges(t *
 	}
 }
 
+func TestContinuationWorkerFreshProcessRestoresEveryPauseReason(t *testing.T) {
+	ctx := context.Background()
+	for _, pauseReason := range []MailboxPauseReason{MailboxPauseInputRequired, MailboxPauseApprovalRequired, MailboxPauseBudgetExhausted} {
+		t.Run(string(pauseReason), func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "mailbox.json")
+			store, err := NewFileStore(path, Policy{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			mb, err := New(store)
+			if err != nil {
+				t.Fatal(err)
+			}
+			binding := continuationTestBinding("fresh-" + string(pauseReason))
+			if _, err := mb.AdmitHostPlan(ctx, binding); err != nil {
+				t.Fatal(err)
+			}
+			handlerCalls := 0
+			worker, err := NewContinuationWorker(mb, WorkerConfig{Enabled: true, InflightTimeout: time.Hour, HeartbeatInterval: time.Minute}, func(context.Context, Record) (HandlerResult, error) {
+				handlerCalls++
+				return HandlerResult{Pause: &HandlerPause{
+					Reason:              pauseReason,
+					CompletedEffectRefs: []string{"effect:completed"},
+					ConsumedBudget:      11,
+					CheckpointReference: "handler-checkpoint:" + string(pauseReason),
+					OriginalDeadline:    time.Now().UTC().Add(time.Hour),
+					ExpiresAt:           time.Now().UTC().Add(time.Hour),
+				}}, nil
+			}, func(context.Context, MailboxContinuation, Record) (HandlerResult, error) {
+				return HandlerResult{}, errors.New("original process resumer must not run")
+			}, func(context.Context, MailboxContinuation) error { return nil }, "continuation-worker")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := worker.RunOnce(ctx); err != nil {
+				t.Fatal(err)
+			}
+			if handlerCalls != 1 {
+				t.Fatalf("initial handler calls=%d, want 1", handlerCalls)
+			}
+			continuation := continuationFromSnapshot(t, mb, ctx, "")
+
+			reopenedStore, err := NewFileStore(path, Policy{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			reopened, err := New(reopenedStore)
+			if err != nil {
+				t.Fatal(err)
+			}
+			freshHandlerCalls := 0
+			resumerCalls := 0
+			resuming, err := NewContinuationWorker(reopened, WorkerConfig{Enabled: true}, func(context.Context, Record) (HandlerResult, error) {
+				freshHandlerCalls++
+				return HandlerResult{}, errors.New("fresh handler must not run during restore")
+			}, func(_ context.Context, restored MailboxContinuation, record Record) (HandlerResult, error) {
+				resumerCalls++
+				if restored.PauseReason != pauseReason || record.AttemptCausation != continuation.AttemptCausation {
+					t.Fatalf("restored pause/source mismatch: %#v %#v", restored, record)
+				}
+				if len(restored.CompletedEffectRefs) != 1 || restored.CompletedEffectRefs[0] != "effect:completed" {
+					t.Fatalf("completed effects were not retained: %#v", restored.CompletedEffectRefs)
+				}
+				return HandlerResult{}, nil
+			}, func(context.Context, MailboxContinuation) error { return nil }, "continuation-worker")
+			if err != nil {
+				t.Fatal(err)
+			}
+			req := continuationResumeRequest(continuation, binding, "fresh-"+string(pauseReason), types.DeploymentRequest{OwnerNamespace: "mailbox", WriterFence: "fence:mailbox"})
+			first, err := resuming.ResumeHandlerContinuation(ctx, req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			duplicate, err := resuming.ResumeHandlerContinuation(ctx, req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if first.TerminalOutcome != "acked" || duplicate.TerminalOutcome != "acked" || resumerCalls != 1 || freshHandlerCalls != 0 {
+				t.Fatalf("fresh restore outcome=%#v duplicate=%#v resumerCalls=%d freshHandlerCalls=%d", first, duplicate, resumerCalls, freshHandlerCalls)
+			}
+		})
+	}
+}
+
+func TestContinuationWorkerResumerPauseCreatesSuccessorWithoutRerunningHandler(t *testing.T) {
+	ctx := context.Background()
+	mb, continuation, binding := pausedContinuationWorker(t, Policy{}, "successor")
+	initialHandlerCalls := 1
+	resumerCalls := 0
+	resuming, err := NewContinuationWorker(mb, WorkerConfig{Enabled: true}, continuationNoopHandler,
+		func(_ context.Context, restored MailboxContinuation, _ Record) (HandlerResult, error) {
+			resumerCalls++
+			if restored.Ref.CheckpointID != continuation.Ref.CheckpointID {
+				t.Fatalf("unexpected first checkpoint: %#v", restored.Ref)
+			}
+			return HandlerResult{Pause: &HandlerPause{
+				Reason:              MailboxPauseApprovalRequired,
+				CheckpointReference: "handler-checkpoint:successor",
+				CompletedEffectRefs: []string{"effect:completed"},
+				OriginalDeadline:    time.Now().UTC().Add(time.Hour),
+				ExpiresAt:           time.Now().UTC().Add(time.Hour),
+			}}, nil
+		}, func(context.Context, MailboxContinuation) error { return nil }, "continuation-worker")
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := resuming.ResumeHandlerContinuation(ctx, continuationResumeRequest(continuation, binding, "successor-first", types.DeploymentRequest{OwnerNamespace: "mailbox", WriterFence: "fence:mailbox"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.SuccessorContinuation == nil || first.LifecycleResult != "paused" || resumerCalls != 1 {
+		t.Fatalf("successor projection=%#v calls=%d", first, resumerCalls)
+	}
+	duplicate, err := resuming.ResumeHandlerContinuation(ctx, continuationResumeRequest(continuation, binding, "successor-first", types.DeploymentRequest{OwnerNamespace: "mailbox", WriterFence: "fence:mailbox"}))
+	if err != nil || duplicate.SuccessorContinuation == nil || duplicate.SuccessorContinuation.CheckpointID != first.SuccessorContinuation.CheckpointID || resumerCalls != 1 {
+		t.Fatalf("duplicate successor projection=%#v err=%v calls=%d", duplicate, err, resumerCalls)
+	}
+
+	snapshot, err := mb.Snapshot(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var successor MailboxContinuation
+	for _, saved := range snapshot.Continuations {
+		if saved.Continuation.Ref.CheckpointID == first.SuccessorContinuation.CheckpointID {
+			successor = saved.Continuation
+		}
+	}
+	if successor.Ref.CheckpointID == "" || successor.PredecessorCheckpointID != continuation.Ref.CheckpointID || successor.Generation != continuation.Generation+1 {
+		t.Fatalf("successor lineage=%#v", successor)
+	}
+
+	finalWorker, err := NewContinuationWorker(mb, WorkerConfig{Enabled: true}, continuationNoopHandler,
+		func(_ context.Context, restored MailboxContinuation, _ Record) (HandlerResult, error) {
+			resumerCalls++
+			if restored.Ref.CheckpointID != successor.Ref.CheckpointID {
+				t.Fatalf("unexpected successor checkpoint: %#v", restored.Ref)
+			}
+			return HandlerResult{}, nil
+		}, func(context.Context, MailboxContinuation) error { return nil }, "continuation-worker")
+	if err != nil {
+		t.Fatal(err)
+	}
+	finalReq := continuationResumeRequest(successor, binding, "successor-final", types.DeploymentRequest{OwnerNamespace: "mailbox", WriterFence: "fence:mailbox"})
+	if outcome, err := finalWorker.ResumeHandlerContinuation(ctx, finalReq); err != nil || outcome.TerminalOutcome != "acked" {
+		t.Fatalf("successor final outcome=%#v err=%v", outcome, err)
+	}
+	if _, err := finalWorker.ResumeHandlerContinuation(ctx, finalReq); err != nil || resumerCalls != 2 || initialHandlerCalls != 1 {
+		t.Fatalf("successor duplicate calls=%d initialHandlerCalls=%d err=%v", resumerCalls, initialHandlerCalls, err)
+	}
+}
+
+func TestCommitHostPlanResumePauseRejectsSuccessorIdentityDrift(t *testing.T) {
+	ctx := context.Background()
+	mb, continuation, binding := pausedContinuationWorker(t, Policy{}, "successor-identity-drift")
+	request := continuationResumeRequest(continuation, binding, "successor-identity-drift", types.DeploymentRequest{OwnerNamespace: "mailbox", WriterFence: "fence:mailbox"})
+	claim, err := mb.ClaimHostPlanResume(ctx, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := mb.MarkHostPlanResumeRunning(ctx, claim); err != nil {
+		t.Fatal(err)
+	}
+
+	successor := continuation.Detached()
+	successor.PredecessorCheckpointID = continuation.Ref.CheckpointID
+	successor.Generation++
+	successor.PlanDigest = "different-plan-digest"
+	successor.CreatedAt = time.Now().UTC()
+	successor.ExpiresAt = successor.CreatedAt.Add(time.Hour)
+	successor, err = SealMailboxContinuation(successor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outcome := HostPlanOutcome{LifecycleResult: "paused", LifecycleReason: string(MailboxPauseApprovalRequired)}
+	if _, err := mb.CommitHostPlanResumePause(ctx, claim, successor, outcome); !errors.Is(err, ErrMailboxContinuationForeign) {
+		t.Fatalf("identity-drifting successor error = %v, want %v", err, ErrMailboxContinuationForeign)
+	}
+}
+
+func TestContinuationWorkerFreshProcessClassifiesRunningClaimAsRecoveryRequired(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "recovery.json")
+	store, err := NewFileStore(path, Policy{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mb, err := New(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	binding := continuationTestBinding("recovery-required")
+	if _, err := mb.AdmitHostPlan(ctx, binding); err != nil {
+		t.Fatal(err)
+	}
+	pausing, err := NewContinuationWorker(mb, WorkerConfig{Enabled: true, InflightTimeout: time.Hour, HeartbeatInterval: time.Minute}, func(context.Context, Record) (HandlerResult, error) {
+		return HandlerResult{Pause: &HandlerPause{Reason: MailboxPauseInputRequired, CheckpointReference: "handler-checkpoint:recovery", ExpiresAt: time.Now().UTC().Add(time.Hour)}}, nil
+	}, continuationNoopResumer, func(context.Context, MailboxContinuation) error { return nil }, "continuation-worker")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pausing.RunOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	continuation := continuationFromSnapshot(t, mb, ctx, "")
+	request := continuationResumeRequest(continuation, binding, "recovery-required", types.DeploymentRequest{OwnerNamespace: "mailbox", WriterFence: "fence:mailbox"})
+	claim, err := mb.ClaimHostPlanResume(ctx, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := mb.MarkHostPlanResumeRunning(ctx, claim); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := store.persist(); err != nil {
+		t.Fatal(err)
+	}
+	reopenedStore, err := NewFileStore(path, Policy{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := New(reopenedStore)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resumerCalls := 0
+	resuming, err := NewContinuationWorker(reopened, WorkerConfig{Enabled: true}, continuationNoopHandler, func(context.Context, MailboxContinuation, Record) (HandlerResult, error) {
+		resumerCalls++
+		return HandlerResult{}, nil
+	}, func(context.Context, MailboxContinuation) error { return nil }, "continuation-worker")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := resuming.ResumeHandlerContinuation(ctx, request); !errors.Is(err, ErrMailboxContinuationRecoveryRequired) || resumerCalls != 0 {
+		t.Fatalf("fresh-process incomplete claim err=%v resumerCalls=%d", err, resumerCalls)
+	}
+	if got := continuationFromSnapshot(t, reopened, ctx, continuation.Ref.CheckpointID); got.Ref != continuation.Ref {
+		t.Fatalf("checkpoint changed after recovery classification: %#v", got.Ref)
+	}
+}
+
 func TestContinuationWorkerPublishesHandlerSafePointCapabilities(t *testing.T) {
 	store, err := NewFileStore(filepath.Join(t.TempDir(), "mailbox.json"), Policy{})
 	if err != nil {
@@ -396,6 +637,21 @@ func pausedContinuationWorker(t *testing.T, policy Policy, suffix string) (*Mail
 	}
 	t.Fatal("missing paused continuation")
 	return nil, MailboxContinuation{}, HostPlanBinding{}
+}
+
+func continuationFromSnapshot(t *testing.T, mb *Mailbox, ctx context.Context, checkpointID string) MailboxContinuation {
+	t.Helper()
+	snapshot, err := mb.Snapshot(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, saved := range snapshot.Continuations {
+		if checkpointID == "" || saved.Continuation.Ref.CheckpointID == checkpointID {
+			return saved.Continuation
+		}
+	}
+	t.Fatal("missing continuation")
+	return MailboxContinuation{}
 }
 
 func continuationNoopHandler(context.Context, Record) (HandlerResult, error) {

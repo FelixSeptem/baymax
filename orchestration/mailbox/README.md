@@ -77,14 +77,13 @@ DLQ and timeout stay source lifecycle facts, not host business commits.
 checkpoint reason evidence; unavailable, corrupt, foreign, expired and
 conflicting states remain typed failures.
 
-Mailbox continuation is a lifecycle projection, not a host handler execution
-safe point. `ResumeHostPlanContinuation` claims and returns the current source
-outcome but does not invoke a plan handler or business effect. Consequently
-`host_context_projection.v1` cannot be injected through mailbox continuation:
-the manifest/context admission must remain `unsupported` until the mailbox
-owner exposes a message/delivery/lease/attempt-bound handler safe point with
-its own lease, retry, DLQ and duplicate-delivery evidence. Planbridge must not
-fill this gap with a wrapper executor or a second consume loop.
+Mailbox host-plan continuation is a lifecycle projection, not a host handler
+execution safe point. `ResumeHostPlanContinuation` claims and returns the
+current source outcome but does not invoke a plan handler or business effect.
+The separate `NewContinuationWorker` path below is the only handler safe point;
+it is not context injection and cannot be inferred from lifecycle continuation.
+Planbridge must not fill this boundary with a wrapper executor or a second
+consume loop.
 
 The continuation capability manifest therefore publishes
 `handler_execution_safe_point` explicitly. A lifecycle-only mailbox owner keeps
@@ -108,10 +107,13 @@ no Ack/Nack/Requeue/retry, publish, replacement consume, or parent Run.
 claims the original source boundary, and invokes the registered resumer once.
 A completed resumer routes through the existing Ack path; a recoverable error
 uses the configured Nack/Requeue policy and preserves retry or DLQ evidence.
-Duplicate requests receive the retained source projection. Lease loss, expiry,
-a foreign/stale deployment fence, persistence uncertainty, or a missing
-new-process resumer fail closed and never restart the handler. This is handler
-execution restore, not context injection and not a host business-commit claim.
+If the resumer pauses again, the owner creates a successor checkpoint with an
+incremented generation and predecessor reference while retaining completed
+effect references. Duplicate requests receive the retained source projection
+and never invoke the resumer twice. Lease loss, expiry, a foreign/stale
+deployment fence, persistence uncertainty, or a missing new-process resumer
+fail closed and never restart the handler. This is handler execution restore,
+not context injection and not a host business-commit claim.
 
 ## Application outbox dispatch (archived 166)
 

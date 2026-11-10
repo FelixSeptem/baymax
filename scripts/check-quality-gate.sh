@@ -293,6 +293,8 @@ echo "[quality-gate] team continuation contract suites"
 bash scripts/check-team-continuation-contract.sh
 echo "[quality-gate] team mailbox continuation contract suites"
 bash scripts/check-team-mailbox-continuation-contract.sh
+echo "[quality-gate] mailbox Agent pause restore contract suites"
+bash scripts/check-mailbox-agent-pause-restore-contract.sh
 echo "[quality-gate] durable store deployment scope contract suites"
 bash scripts/check-durable-store-deployment-scope-contract.sh
 echo "[quality-gate] host execution plan bridge contract suites"

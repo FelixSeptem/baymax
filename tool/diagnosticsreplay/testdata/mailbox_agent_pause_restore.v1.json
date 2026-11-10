@@ -1,0 +1,42 @@
+{
+  "version": "mailbox_agent_pause_restore.v1",
+  "cases": [
+    {
+      "case_id": "input",
+      "pause_reason": "input_required",
+      "fresh_process_restore": true,
+      "completed_effects_rerun": false,
+      "duplicate_resume_count": 2,
+      "deployment_scope": "same_host_single_writer_sequential_reopen",
+      "terminal_outcome": "acked"
+    },
+    {
+      "case_id": "approval",
+      "pause_reason": "approval_required",
+      "fresh_process_restore": true,
+      "completed_effects_rerun": false,
+      "duplicate_resume_count": 2,
+      "deployment_scope": "same_host_single_writer_sequential_reopen",
+      "terminal_outcome": "acked"
+    },
+    {
+      "case_id": "budget",
+      "pause_reason": "budget_exhausted",
+      "fresh_process_restore": true,
+      "completed_effects_rerun": false,
+      "duplicate_resume_count": 2,
+      "deployment_scope": "same_host_single_writer_sequential_reopen",
+      "terminal_outcome": "acked"
+    },
+    {
+      "case_id": "lifecycle-only",
+      "pause_reason": "input_required",
+      "fresh_process_restore": false,
+      "completed_effects_rerun": false,
+      "duplicate_resume_count": 1,
+      "deployment_scope": "process_local",
+      "terminal_outcome": "unsupported",
+      "unsupported_reason": "mailbox_handler_safe_point_unsupported"
+    }
+  ]
+}

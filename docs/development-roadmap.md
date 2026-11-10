@@ -15,12 +15,7 @@ Baymax 处于 pre-`1.0.0` 阶段，不做 `1.0.0` / prod-ready 承诺。允许�
 - 已归档：
   - `child-composer-continuation-contract`（F；归档 194；child continuation 仅在显式 File owner + native history + executor 下声明，验证 profile 仍为 same-host/single-writer/sequential reopen）。
   - `refresh-upstream-findings-current-pin`（归档 197；以当前 pin 固化 upstream findings、Baymax contract evidence、部署边界和 provider live-smoke 的 `skipped-unconfigured` 规则；不提升 unsupported capability）。
-
-- 进行中：
-  - `mailbox-agent-pause-restore-boundary`（I，已归档）。
-
-I 已进入实施：仅显式配置的 continuation worker、durable FileStore、registered resumer/revalidator
-可以声明 Agent handler pause restore；默认 worker 与 lifecycle replay 仍不是 Agent checkpoint owner。
+  - `mailbox-agent-pause-restore-boundary`（I；归档 198；显式 continuation worker、durable FileStore、registered resumer/revalidator 可声明 same-host/single-writer/sequential-reopen 范围内的三类 Agent handler pause restore；默认 worker 与 lifecycle replay 仍不是 Agent checkpoint owner）。
 
 状态唯一来源：active change 以当前分支 `openspec list --json` 为准，已归档 change 以 [archive index](../openspec/changes/archive/INDEX.md) 为准。状态含义：需求触发=缺稳定失败复现；起草中=OpenSpec 尚未满足 `applyRequires`；可实施=owner、复现、部署范围、验证和回滚齐备；已归档=实现、门禁和索引完成。
 

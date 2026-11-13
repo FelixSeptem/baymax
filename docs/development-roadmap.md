@@ -1,6 +1,6 @@
 # Development Roadmap
 
-更新时间：2026-11-09
+更新时间：2026-11-13
 
 Baymax 提案发现与实施入口。按状态区确认当前工作，再按候选表判断是否有证据可启动；详细契约、任务和历史证据见 [OpenSpec changes](../openspec/changes/)、[归档索引](../openspec/changes/archive/INDEX.md) 与 [mainline contract test index](mainline-contract-test-index.md)。
 
@@ -16,6 +16,11 @@ Baymax 处于 pre-`1.0.0` 阶段，不做 `1.0.0` / prod-ready 承诺。允许�
   - `child-composer-continuation-contract`（F；归档 194；child continuation 仅在显式 File owner + native history + executor 下声明，验证 profile 仍为 same-host/single-writer/sequential reopen）。
   - `refresh-upstream-findings-current-pin`（归档 197；以当前 pin 固化 upstream findings、Baymax contract evidence、部署边界和 provider live-smoke 的 `skipped-unconfigured` 规则；不提升 unsupported capability）。
   - `mailbox-agent-pause-restore-boundary`（I；归档 198；显式 continuation worker、durable FileStore、registered resumer/revalidator 可声明 same-host/single-writer/sequential-reopen 范围内的三类 Agent handler pause restore；默认 worker 与 lifecycle replay 仍不是 Agent checkpoint owner）。
+  - `introduce-mainstream-sandbox-executor-backends`（K；归档 199；把 e2b、open-sandbox、anthropics/sandbox-runtime 映射到既有 canonical `oci_runtime`，提供 `adapter/sandboxexternal` 实现、config 注册与 fail-fast 校验、runtime×kind 冻结失败分类矩阵与 onboarding 示例；默认 `Disabled`，仍不声明本仓自带生产级隔离执行器）。
+- 进行中：
+  - 当前无 active change；下一提案必须从最新 master 重新切出语义化功能分支。
+
+候选方向见 [待实施方向与已交付基线](#待实施方向与已交付基线) 中标注「候选」的行；候选不进入当前状态，避免与 active change 权威来源混淆。
 
 状态唯一来源：active change 以当前分支 `openspec list --json` 为准，已归档 change 以 [archive index](../openspec/changes/archive/INDEX.md) 为准。状态含义：需求触发=缺稳定失败复现；起草中=OpenSpec 尚未满足 `applyRequires`；可实施=owner、复现、部署范围、验证和回滚齐备；已归档=实现、门禁和索引完成。
 
@@ -33,6 +38,8 @@ Baymax 处于 pre-`1.0.0` 阶段，不做 `1.0.0` / prod-ready 承诺。允许�
 | **H / 已归档 196**<br>可部署的 source-owned durable history store contract | 现有 native history 能表达 source identity、sequence、opaque cursor、retention floor 与 bounded replay；FileStore/既有证据仍不足以声明跨机器、多写者、多实例生产恢复。 | `core/history`、runner、child、team、workflow、mailbox source owner；已交付显式 owner-store factory/deployment binding、same-host multi-instance CAS/fencing、stable event identity、幂等 append、bounded `ReadAfter`、retention/expired/gap typed errors 与 crash-before-projection replay/reconciliation；source append 与 Danny projection 不做跨项目事务，改以 source identity/cursor + projection idempotency 明确对账语义。 | 不把 callback EventID、application snapshot 或静态 manifest 当 source history；不声称跨机器协调或 source/projection 原子提交；source store 不可用必须 `recovery-required`，不能从头重跑不确定 effect。 | [deployable-source-history-store-contract](../openspec/changes/archive/196-deployable-source-history-store-contract/) |
 | **I / 已归档**<br>mailbox Agent pause restore boundary | 现有 `NewContinuationWorker` 的 owner-native handler continuation 已完成三类 pause 的 fresh-process、duplicate、lease/revalidation、terminal-policy 和 completed-effect non-replay 证据。 | `orchestration/mailbox` 继续拥有 message/delivery/lease/attempt/checkpoint/ack/retry/DLQ；显式 FileStore + registered resumer/revalidator 声明 handler safe point，并支持 successor checkpoint lineage。planbridge 只委托既有 worker，不创建 worker/queue/restore loop。 | 仅声明 same-host/single-writer/sequential reopen；不声称跨机器、多写者、多实例 durable restore；默认 `NewWorker`、mailbox history replay、redelivery/lease reclaim 和 planbridge resumed execution 仍 unsupported。 | `2026-11-10-mailbox-agent-pause-restore-boundary` |
 | **J / 已归档 197 证据刷新**<br>upstream findings 与当前 Baymax pin 对齐 | upstream finding 仍记录旧 pin，不能把旧版本结论直接作为当前版本正式复现；当前代码/contract evidence pin 为 `v0.0.0-20261103091945-d2e08cd6dc8c`。 | docs/upstream owner；已以当前 pin 固化 child/team/source-history/mailbox/cancellation/retry 的证据矩阵、部署前提和未验证项；旧 pin 仅作为历史背景，不关闭或迁移结论。 | 不因旧 finding 推断当前版本 bug；无真实 endpoint/model/key 时 live-smoke 保持 `skipped-unconfigured`，不写成 Baymax 代码失败或成功。 | [refresh-upstream-findings-current-pin](../openspec/changes/archive/197-refresh-upstream-findings-current-pin/) |
+| **K / 已归档 199**<br>主流沙箱执行器后端接入 | 既有 `SandboxExecutor` 接口、`adapter/manifest/sandbox_profile_pack.go` 与 `sandboxconformance` harness 已定义四种后端画像与一致性矩阵，但本仓无生产级执行器实现；宿主需要把 anthropics/sandbox-runtime、open-sandbox.ai、e2b 等主流沙箱运行时作为真实后端接入。 | `adapter`/runtime owner；在契约与 conformance harness 上实现主流沙箱执行器适配（`BuildSandboxExecSpec` → 远端/容器运行时调用）、capability probe 协商、egress 治理对齐，并提供 offline replay 与 adapter onboarding 模板。 | 不在本仓从零自建隔离层；adapter 保持外部 onboarding 模板，不把任意外部运行时默认开启为隔离后端；沿用既有 `sandbox-*-matrix` 验收，不新建平行契约。 | [introduce-mainstream-sandbox-executor-backends](../openspec/changes/archive/199-introduce-mainstream-sandbox-executor-backends/) |
+| **L / 候选**<br>Redis 消息桥接跨实例协调 | 当前运行态、Mailbox、实时游标、连接相关性均为进程内存 + 本地文件，`cross_machine` 在契约中被显式定为 unsupported；无消息总线、无 leader 选举、无 session affinity，无法跨 pod 水平扩展。 | runtime/coordination owner；以 Redis 实现既有 `Coordinator` 接口（分布式锁 + CAS/fencing）、Mailbox broker、实时游标与连接相关性存储、实例发现与 session affinity；桥接不可用必须 fail-fast，并存档同机 File 协调器作为基线。 | 无独立分布式锁 + CAS 证据前不声称 `cross_machine` 支持；不新建全局控制面/托管 gateway；沿用 `durable-source-store-coordination` 的 unsupported 边界，仅扩展已验证的协调后端，不扩大 unsupported 声明。 | `redis-message-bridge-cross-instance`（候选 slug） |
 
 这些方向来自对 [deepseek-ai/dsh-superagent-prototype](https://github.com/deepseek-ai/dsh-superagent-prototype) 九章设计文档的架构审阅；它们是 Baymax 可借鉴的 owner、恢复、adapter、诊断和模型可见面治理方向，不表示采用其 DeepSeek Harness 控制面、SQLite application runtime、`danger-full-access` worker 或跨 source 身份 prompt 映射。F–J 是当前 Baymax 能力证据中明确暴露的后续候选：执行 wiring 已存在不等于 continuation restore 已支持，source history 可 replay 不等于生产级恢复，mailbox lifecycle replay 不等于 Agent checkpoint owner。后续候选按同一行动卡格式加入本表：触发信号、owner/入口、最小失败复现、首批实施方向、停止线和 OpenSpec slug 缺一不可。新信号先判断能否作为已有 contract 的增量，不为 DTO/API 已存在或 README 描述单独立项。
 
@@ -51,6 +58,8 @@ Baymax 处于 pre-`1.0.0` 阶段，不做 `1.0.0` / prod-ready 承诺。允许�
 | 7 / H | deployable source history store | owner factory 绑定、多写者 CAS/fencing、幂等 event identity、bounded replay、crash reconciliation 和不可用时 recovery-required。 | 未证明跨机器/多实例部署前提时，只声明已验证的同机 profile。 |
 | 8 / I | mailbox Agent pause restore boundary | 配置型 handler continuation 的三类 pause、fresh-process restore、successor lineage、terminal/retry/DLQ 投影和 capability/gate 文档。 | 未证明跨机器/多写者/多实例时只保留 same-host profile；不能把 mailbox replay 或 redelivery 当 Agent restore。 |
 | 9 / J | current-pin upstream finding refresh | 以当前 Baymax pin 重做正式复现，更新未验证矩阵和 live-smoke 配置前提。 | 旧 pin 仅作历史记录；无真实 provider 配置时保持 skipped-unconfigured。 |
+| 进行中 / K | 主流沙箱执行器后端接入 | 主流沙箱运行时的 `SandboxExecutor` 适配、capability probe、egress 对齐与 `sandboxconformance` 离线验收；adapter onboarding 模板。 | 任一外部后端无 capability/fencing 证据则保持 adapter unsupported，不默认开启；复用既有 `sandbox-*-matrix`，不新建平行契约。 |
+| 11 / L | Redis 消息桥接跨实例协调 | Redis 实现的 `Coordinator` 分布式锁 + CAS、Mailbox broker、实时游标/连接相关性存储、实例发现与 session affinity；桥接不可用 fail-fast。 | 无独立分布式锁 + CAS 证据前不声称 `cross_machine`；保留同机 File 协调器基线；沿用 unsupported 边界，不扩大声明。 |
 
 ## 实施准入与固定边界
 

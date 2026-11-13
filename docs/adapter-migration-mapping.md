@@ -248,15 +248,20 @@ pwsh -File scripts/check-adapter-contract-replay.ps1
 | Linux Bubblewrap wrapper（脚本内拼装 bwrap args） | `sandbox_backend=linux_bwrap` + `sandbox_profile_id=linux_bwrap` | host 约束固定 `host_os=linux`、`host_arch=amd64`；session mismatch 必须 fail-fast | 回滚时仅回滚 backend/profile 字段，不删除 manifest 其他兼容字段 | `sandbox-linux-bwrap-matrix` |
 | OCI runtime wrapper（docker/runc wrapper） | `sandbox_backend=oci_runtime` + `sandbox_profile_id=oci_runtime` | backend/profile drift 必须由 gate 阻断；允许 optional capability downgrade | 可临时回退到 legacy wrapper，但必须保留 replay fixture 并验证 mixed profile 不回归 | `sandbox-oci-runtime-matrix` |
 | Windows Job wrapper（PowerShell 启动作业对象） | `sandbox_backend=windows_job` + `sandbox_profile_id=windows_job` | host mismatch 与 session unsupported 必须 deterministic fail-fast | 回滚到旧 wrapper 时保留 `sandbox_profile_id`，避免后续迁移无法对账 | `sandbox-windows-job-matrix` |
+| e2b 运行时（云端/本地 dev server） | `sandbox_backend=oci_runtime` + `sandbox_external_backend=e2b` + `external_base_url` 注入 | 复用既有 `SandboxExecutor` 契约与 `sandbox-*-matrix`；未配置返回 `backend_unavailable` 由宿主回退 | 回滚时清空 `external_backend`（回到 canonical `oci_runtime`），保留 manifest 字段以便复跑 conformance | `sandbox-e2b-matrix` |
+| open-sandbox.ai 运行时 | `sandbox_backend=oci_runtime` + `sandbox_external_backend=open-sandbox` + `external_base_url` 注入 | 同上；readonly_root 作为探针能力之一 | 同上 | `sandbox-open-sandbox-matrix` |
+| anthropics/sandbox-runtime 运行时 | `sandbox_backend=oci_runtime` + `sandbox_external_backend=anthropic-sandbox-runtime` + `external_base_url` 注入 | 同上；oom_signal 作为探针能力之一 | 同上 | `sandbox-anthropic-sandbox-runtime-matrix` |
 
 迁移后最小验收命令：
 
 ```bash
 bash scripts/check-sandbox-adapter-conformance-contract.sh
+bash scripts/check-sandbox-external-executor-conformance.sh
 ```
 
 ```powershell
 pwsh -File scripts/check-sandbox-adapter-conformance-contract.ps1
+pwsh -File scripts/check-sandbox-external-executor-conformance.ps1
 ```
 
 ## Memory Legacy Path -> Unified SPI Mapping

@@ -26,6 +26,7 @@ go run ./examples/01-chat-minimal
 - local tool、MCP HTTP/STDIO、workflow、teams、A2A、scheduler、composer。
 - Context budget/projection、结构化 timeline/diagnostics、RuntimeRecorder 单写入口。
 - contract/replay/gate 作为离线、bounded、可重复的证据。
+- opt-in 外部沙箱运行时 adapter（`e2b` / `open-sandbox` / `anthropic-sandbox-runtime`，以及 offline onboarding 用的 `local`），统一映射到既有四种 canonical backend；默认 `Disabled`，不改变 `observe` + `default_action=host` 姿态，也不声明本仓自带真实隔离执行器。见 [外部适配模板索引](docs/external-adapter-template-index.md) 与 [适配迁移映射](docs/adapter-migration-mapping.md)。
 - opt-in 原生执行事件 adapter：真实回调、独立宿主 references、保守 source capabilities 和有界观察失败反馈，见 [接入示例](examples/native-execution-events/README.md)。
 
 不提供自动 Provider 探测、隐式全局 registry、远程控制面或跨租户状态。架构与依赖边界见 [架构总览](docs/architecture/overview.md)、[设计原则](docs/architecture/design-principles.md) 和 [模块 ownership](docs/architecture/module-ownership.md)。
@@ -46,6 +47,7 @@ go run ./examples/01-chat-minimal
 
 OpenSpec 状态以 `openspec list --json`、[路线图](docs/development-roadmap.md) 和 [归档索引](openspec/changes/archive/INDEX.md) 为准。能力边界和仍不支持的组合也见 [集成能力矩阵](docs/guides/integration.md)，不要从 package 名称或旧的 release snapshot 推断。
 
+- `introduce-mainstream-sandbox-executor-backends`（K；已归档 199，已归档并稳定）：把 e2b、open-sandbox、anthropics/sandbox-runtime 映射到既有 canonical `oci_runtime`，交付 `adapter/sandboxexternal`、config 注册与 fail-fast 校验、runtime×kind 冻结失败分类矩阵和 onboarding 示例；默认 `Disabled`，不改变 `observe` + `default_action=host` 姿态，本仓仍不内置生产级隔离执行器。详见 [归档记录](openspec/changes/archive/199-introduce-mainstream-sandbox-executor-backends/)。
 - `refresh-upstream-findings-current-pin`（已归档 197）：按当前 Baymax pin 固化 upstream findings、contract evidence 和 provider live-smoke 配置边界；只更新 provenance/证据，不提升 unsupported capability。详见 [归档记录](openspec/changes/archive/197-refresh-upstream-findings-current-pin/)。
 - `role-scoped-runtime-ports-and-owner-index`（已归档 193）：为 resolver material、model surface 与 source adapter 三类既有语义建立可校验的唯一 owner 和证据索引；不收窄 runtime port 或改变运行时行为。详见[归档记录](openspec/changes/archive/193-role-scoped-runtime-ports-and-owner-index/)与[路线图](docs/development-roadmap.md)。
 - `host-authorization-provenance-and-resume-revalidation`（已归档）：宿主恢复授权的可选 provenance 已在 source claim 前重验证 policy 和 source scope，并保留旧版省略字段与取消语义。详见 [归档索引](openspec/changes/archive/INDEX.md)。

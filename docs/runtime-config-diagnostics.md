@@ -1801,7 +1801,22 @@ security:
       session_mode: per_call       # per_call|per_session
       required_capabilities:
         - stdout_stderr_capture
+      external_backend: ""         # ""(disabled)|e2b|open-sandbox|anthropic-sandbox-runtime|local
+      external_base_url: ""        # external runtime endpoint; empty keeps backend_unavailable
 ```
+
+Mainstream Sandbox External Executor Backends 在既有 canonical backend 之上增加一层可选的外部运行时 adapter 选择，不改变默认姿态：
+
+- `security.sandbox.executor.external_backend` 默认空字符串，即 `Disabled`；默认仍走 canonical backend 且 `mode=observe`、`policy.default_action=host`。
+- `external_backend` 必须与 `executor.backend` 的 canonical 映射一致，否则启动/热更新 fail-fast：
+  - `e2b` → `oci_runtime`
+  - `open-sandbox` → `oci_runtime`
+  - `anthropic-sandbox-runtime` → `oci_runtime`
+  - `local` 是 offline onboarding adapter，不声明真实隔离，可选任意 canonical backend。
+- `security.sandbox.executor.external_base_url` 指向外部运行时端点（onboarding 期通常是本地 docker 服务）；为空时 adapter 保持 `sandbox.backend_unavailable`，不影响进程启动。
+- 环境变量覆盖沿用既有优先级：`BAYMAX_SECURITY_SANDBOX_EXECUTOR_EXTERNAL_BACKEND`、`BAYMAX_SECURITY_SANDBOX_EXECUTOR_EXTERNAL_BASE_URL`。
+- 外部 adapter 失败分类复用既有 sandbox taxonomy：`sandbox.launch_failed`、`sandbox.capability_mismatch`、`sandbox.timeout`、`sandbox.oom`、`sandbox.egress_denied`、`sandbox.backend_unavailable`；不新增平行契约。
+- `security.sandbox.enabled=false` 时外部 adapter 不会被采用，配置项仅做格式校验。
 
 Sandbox Rollout + Health/Capacity Governance 在 Sandbox Execution Isolation 基础上新增 sandbox rollout/health-budget/capacity 治理配置，继续沿用统一优先级：`env > file > default`。
 
@@ -1855,6 +1870,9 @@ Sandbox Execution Isolation/Sandbox Rollout + Health/Capacity Governance 门禁�
 - sandbox executor offline conformance harness：
   - Linux/macOS: `bash scripts/check-sandbox-executor-conformance.sh`
   - Windows: `pwsh -File scripts/check-sandbox-executor-conformance.ps1`
+- mainstream sandbox external executor conformance gate：
+  - Linux/macOS: `bash scripts/check-sandbox-external-executor-conformance.sh`
+  - Windows: `pwsh -File scripts/check-sandbox-external-executor-conformance.ps1`
 - CI Job: `security-sandbox-gate`（仅 PR 触发，可配置 branch-protection required check）
 - CI Job: `sandbox-rollout-governance-gate`（仅 PR 触发，可配置 branch-protection required check）
 - quality gate 集成：`check-security-sandbox-contract.*` 与 `check-sandbox-rollout-governance-contract.*` 已纳入 `check-quality-gate.sh/.ps1`

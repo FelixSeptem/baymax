@@ -76,6 +76,20 @@ manifest 片段（profile declaration + manifest snippet）：
 }
 ```
 
+## Mainstream External Sandbox Runtime Adapters（新增，sandbox-external-executor-backends）
+
+`adapter/sandboxexternal` 包把主流沙箱运行时作为 `oci_runtime` canonical profile 的变体接入既有 `SandboxExecutor` 契约。每个外部 backend 通过 `Config` 注册并校验其 canonical 映射，未配置（无 `BaseURL`/`APIKey`）时执行返回 `backend_unavailable`，由宿主按 `DefaultAction` 回退。
+
+| 外部 backend | canonical 映射 | 能力探针 | 运行命令 |
+| --- | --- | --- | --- |
+| `e2b` | `oci_runtime` | stdout_stderr_capture, session_per_call, memory_limit, pid_limit | `pwsh -File scripts/check-sandbox-external-executor-conformance.ps1` |
+| `open-sandbox` | `oci_runtime` | stdout_stderr_capture, session_per_call, readonly_root, memory_limit | `pwsh -File scripts/check-sandbox-external-executor-conformance.ps1` |
+| `anthropic-sandbox-runtime` | `oci_runtime` | stdout_stderr_capture, session_per_call, memory_limit, pid_limit, oom_signal | `pwsh -File scripts/check-sandbox-external-executor-conformance.ps1` |
+
+- 本地可跑 backend：`local`（offline conformance / 开发用，非生产隔离）。
+- 失败分类冻结为 `launch_failed` / `capability_mismatch` / `timeout` / `oom` / `egress_denied` / `backend_unavailable`，复用既有 `sandbox-*-matrix`，不新建平行契约。
+- 云端 adapter 真实调用需 docker 起本地服务（见 `openspec/changes/introduce-mainstream-sandbox-executor-backends`）；本仓不内置生产级隔离执行器。
+
 ## MCP Adapter Template（P1）
 
 最小可运行片段（`examples/templates/mcp-adapter-template/main.go`）展示：

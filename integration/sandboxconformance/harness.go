@@ -116,15 +116,18 @@ func (e *ConformanceError) Error() string {
 	return e.Message
 }
 
+// requiredBackends enumerates the four canonical sandbox backend profiles that
+// every minimum matrix must cover.
+var requiredBackends = map[string]struct{}{
+	runtimeconfig.SecuritySandboxBackendLinuxNSJail: {},
+	runtimeconfig.SecuritySandboxBackendLinuxBwrap:  {},
+	runtimeconfig.SecuritySandboxBackendOCIRuntime:  {},
+	runtimeconfig.SecuritySandboxBackendWindowsJob:  {},
+}
+
 func ValidateMinimumMatrix(matrix []Scenario) error {
 	if len(matrix) == 0 {
 		return fmt.Errorf("empty sandbox conformance matrix")
-	}
-	requiredBackends := map[string]struct{}{
-		runtimeconfig.SecuritySandboxBackendLinuxNSJail: {},
-		runtimeconfig.SecuritySandboxBackendLinuxBwrap:  {},
-		runtimeconfig.SecuritySandboxBackendOCIRuntime:  {},
-		runtimeconfig.SecuritySandboxBackendWindowsJob:  {},
 	}
 	coveredBackends := map[string]struct{}{}
 	ids := map[string]struct{}{}

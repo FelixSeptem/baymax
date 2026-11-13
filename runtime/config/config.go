@@ -212,6 +212,16 @@ const (
 	SecuritySandboxBackendOCIRuntime  = "oci_runtime"
 	SecuritySandboxBackendWindowsJob  = "windows_job"
 
+	// External sandbox runtimes are opt-in adapters that map onto one of the
+	// four canonical backends above. An empty selector means "disabled": the
+	// canonical backend is used as-is, which keeps the default posture
+	// (observe mode + DefaultAction=host) unchanged.
+	SecuritySandboxExternalBackendDisabled                = ""
+	SecuritySandboxExternalBackendE2B                     = "e2b"
+	SecuritySandboxExternalBackendOpenSandbox             = "open-sandbox"
+	SecuritySandboxExternalBackendAnthropicSandboxRuntime = "anthropic-sandbox-runtime"
+	SecuritySandboxExternalBackendLocal                   = "local"
+
 	SecuritySandboxCapabilityNetworkOff          = "network_off"
 	SecuritySandboxCapabilityNetworkEgressAllow  = "network_egress_allowlist"
 	SecuritySandboxCapabilityReadonlyRoot        = "readonly_root"
@@ -1129,6 +1139,13 @@ type SecuritySandboxExecutorConfig struct {
 	Backend              string   `json:"backend"`
 	SessionMode          string   `json:"session_mode"`
 	RequiredCapabilities []string `json:"required_capabilities"`
+	// ExternalBackend selects an opt-in external runtime adapter that is
+	// mapped onto Backend (the canonical profile). Empty means disabled.
+	ExternalBackend string `json:"external_backend"`
+	// ExternalBaseURL points at the runtime endpoint (for example a locally
+	// started docker service during onboarding). Empty keeps the adapter in
+	// backend_unavailable state instead of failing startup.
+	ExternalBaseURL string `json:"external_base_url"`
 }
 
 type SecuritySandboxProfileConfig struct {
@@ -3425,6 +3442,9 @@ func validateSecuritySandboxConfig(cfg SecuritySandboxConfig) error {
 	}); err != nil {
 		return err
 	}
+	if err := validateSandboxExternalBackend(cfg.Executor); err != nil {
+		return err
+	}
 	validCaps := map[string]struct{}{
 		SecuritySandboxCapabilityNetworkOff:          {},
 		SecuritySandboxCapabilityNetworkEgressAllow:  {},
@@ -4949,6 +4969,8 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("security.sandbox.executor.backend", base.Security.Sandbox.Executor.Backend)
 	v.SetDefault("security.sandbox.executor.session_mode", base.Security.Sandbox.Executor.SessionMode)
 	v.SetDefault("security.sandbox.executor.required_capabilities", base.Security.Sandbox.Executor.RequiredCapabilities)
+	v.SetDefault("security.sandbox.executor.external_backend", base.Security.Sandbox.Executor.ExternalBackend)
+	v.SetDefault("security.sandbox.executor.external_base_url", base.Security.Sandbox.Executor.ExternalBaseURL)
 	v.SetDefault("security.sandbox.profiles", base.Security.Sandbox.Profiles)
 	v.SetDefault("security.sandbox.rollout.phase", base.Security.Sandbox.Rollout.Phase)
 	v.SetDefault("security.sandbox.rollout.traffic_ratio", base.Security.Sandbox.Rollout.TrafficRatio)
@@ -5909,6 +5931,8 @@ func buildConfig(v *viper.Viper) (Config, error) {
 	cfg.Security.Sandbox.Executor.Backend = strings.ToLower(strings.TrimSpace(v.GetString("security.sandbox.executor.backend")))
 	cfg.Security.Sandbox.Executor.SessionMode = strings.ToLower(strings.TrimSpace(v.GetString("security.sandbox.executor.session_mode")))
 	cfg.Security.Sandbox.Executor.RequiredCapabilities = normalizeKeywords(v.GetStringSlice("security.sandbox.executor.required_capabilities"))
+	cfg.Security.Sandbox.Executor.ExternalBackend = strings.ToLower(strings.TrimSpace(v.GetString("security.sandbox.executor.external_backend")))
+	cfg.Security.Sandbox.Executor.ExternalBaseURL = strings.TrimSpace(v.GetString("security.sandbox.executor.external_base_url"))
 	cfg.Security.Sandbox.Rollout.Phase = strings.ToLower(strings.TrimSpace(v.GetString("security.sandbox.rollout.phase")))
 	cfg.Security.Sandbox.Rollout.TrafficRatio = v.GetFloat64("security.sandbox.rollout.traffic_ratio")
 	cfg.Security.Sandbox.Rollout.HealthWindow = v.GetDuration("security.sandbox.rollout.health_window")
@@ -6443,6 +6467,51 @@ func ResolveSandboxProfile(cfg SecuritySandboxConfig, namespaceTool string) stri
 
 func IsHighRiskSandboxSelector(selector string) bool {
 	return isHighRiskSandboxSelector(selector)
+}
+
+// SecuritySandboxExternalBackendCanonical maps an opt-in external runtime to
+// the canonical sandbox backend it must be configured with. The mapping lives
+// in config (not in adapter) so validation and adapter wiring cannot drift.
+var SecuritySandboxExternalBackendCanonical = map[string]string{
+	SecuritySandboxExternalBackendE2B:                     SecuritySandboxBackendOCIRuntime,
+	SecuritySandboxExternalBackendOpenSandbox:             SecuritySandboxBackendOCIRuntime,
+	SecuritySandboxExternalBackendAnthropicSandboxRuntime: SecuritySandboxBackendOCIRuntime,
+}
+
+// ResolveSandboxExternalBackend returns the configured external runtime
+// selector and the canonical backend it maps to. ok is false when the external
+// adapter is disabled (empty selector).
+func ResolveSandboxExternalBackend(cfg SecuritySandboxConfig) (external string, canonical string, ok bool) {
+	external = strings.ToLower(strings.TrimSpace(cfg.Executor.ExternalBackend))
+	if external == "" {
+		return "", "", false
+	}
+	if external == SecuritySandboxExternalBackendLocal {
+		return external, cfg.Executor.Backend, true
+	}
+	return external, SecuritySandboxExternalBackendCanonical[external], true
+}
+
+func validateSandboxExternalBackend(executor SecuritySandboxExecutorConfig) error {
+	external := strings.ToLower(strings.TrimSpace(executor.ExternalBackend))
+	if external == "" {
+		return nil
+	}
+	if external == SecuritySandboxExternalBackendLocal {
+		// The local backend is an onboarding/offline-conformance adapter: it
+		// runs commands on the host process tree and is selectable with any
+		// canonical backend so operators can exercise the wiring without a
+		// remote runtime. It never claims real isolation.
+		return nil
+	}
+	canonical, ok := SecuritySandboxExternalBackendCanonical[external]
+	if !ok {
+		return fmt.Errorf("security.sandbox.executor.external_backend %q is not a registered external runtime", external)
+	}
+	if canonical != executor.Backend {
+		return fmt.Errorf("security.sandbox.executor.external_backend %q requires backend %q, got %q", external, canonical, executor.Backend)
+	}
+	return nil
 }
 
 func normalizeNamespaceToolIntMap(in map[string]any) map[string]int {

@@ -143,6 +143,14 @@ func (s *MemoryStore) SetLifecycleTracing(enabled bool) {
 }
 
 func newStoreWithFallback(backend, path string, policy Policy, opts ...FileStoreOption) (StoreInitResult, error) {
+	return newStoreWithFallbackConfig(backend, path, policy, RedisStoreConfig{}, opts...)
+}
+
+// newStoreWithFallbackConfig is the backend-aware initializer. The redis
+// backend fails fast on invalid wiring (no injected client) instead of
+// silently degrading: a cross-instance deployment that lost its coordinator
+// must not quietly become single-instance.
+func newStoreWithFallbackConfig(backend, path string, policy Policy, redisCfg RedisStoreConfig, opts ...FileStoreOption) (StoreInitResult, error) {
 	normalizedBackend := strings.ToLower(strings.TrimSpace(backend))
 	switch normalizedBackend {
 	case "", "memory":
@@ -167,6 +175,16 @@ func newStoreWithFallback(backend, path string, policy Policy, opts ...FileStore
 			Store:     store,
 			Backend:   "file",
 			Requested: "file",
+		}, nil
+	case "redis":
+		store, err := NewRedisStore(redisCfg, policy)
+		if err != nil {
+			return StoreInitResult{}, err
+		}
+		return StoreInitResult{
+			Store:     store,
+			Backend:   "redis",
+			Requested: "redis",
 		}, nil
 	default:
 		return StoreInitResult{}, ErrUnsupportedBackend{Backend: backend}

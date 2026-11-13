@@ -5,7 +5,7 @@ $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot "lib/native-strict.ps1")
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $repoRoot
-$env:GOCACHE = if ($env:BAYMAX_CANDIDATE_COMPARISON_GOCACHE) { $env:BAYMAX_CANDIDATE_COMPARISON_GOCACHE } else { Join-Path $repoRoot ".gocache-candidate-comparison" }
+$env:GOCACHE = if ($env:BAYMAX_CANDIDATE_COMPARISON_GOCACHE) { $env:BAYMAX_CANDIDATE_COMPARISON_GOCACHE } elseif ($env:GOCACHE) { $env:GOCACHE } else { Join-Path $repoRoot ".gocache-candidate-comparison" }
 if ($FixturePath) { $env:BAYMAX_CANDIDATE_COMPARISON_FIXTURE = (Resolve-Path -LiteralPath $FixturePath).Path }
 
 Write-Host "[candidate-comparison-contract] bounded identity, isolation, selection and cost replay"

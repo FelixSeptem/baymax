@@ -102,6 +102,19 @@ Health 仅返回有限分类、有界 reference 与饱和计数，不保留 payl
   - `mailbox.worker.heartbeat_interval` -> `BAYMAX_MAILBOX_WORKER_HEARTBEAT_INTERVAL`
   - `mailbox.worker.reclaim_on_consume` -> `BAYMAX_MAILBOX_WORKER_RECLAIM_ON_CONSUME`
   - `mailbox.worker.panic_policy` -> `BAYMAX_MAILBOX_WORKER_PANIC_POLICY`
+  - `runtime.coordination.backend` -> `BAYMAX_RUNTIME_COORDINATION_BACKEND`
+  - `runtime.coordination.file_dir` -> `BAYMAX_RUNTIME_COORDINATION_FILE_DIR`
+  - `runtime.coordination.redis.addr` -> `BAYMAX_RUNTIME_COORDINATION_REDIS_ADDR`
+  - `runtime.coordination.redis.username` -> `BAYMAX_RUNTIME_COORDINATION_REDIS_USERNAME`
+  - `runtime.coordination.redis.password` -> `BAYMAX_RUNTIME_COORDINATION_REDIS_PASSWORD`
+  - `runtime.coordination.redis.db` -> `BAYMAX_RUNTIME_COORDINATION_REDIS_DB`
+  - `runtime.coordination.redis.dial_timeout_ms` -> `BAYMAX_RUNTIME_COORDINATION_REDIS_DIAL_TIMEOUT_MS`
+  - `runtime.coordination.redis.op_timeout_ms` -> `BAYMAX_RUNTIME_COORDINATION_REDIS_OP_TIMEOUT_MS`
+  - `runtime.coordination.redis.key_prefix` -> `BAYMAX_RUNTIME_COORDINATION_REDIS_KEY_PREFIX`
+  - `runtime.coordination.redis.lease_ttl_ms` -> `BAYMAX_RUNTIME_COORDINATION_REDIS_LEASE_TTL_MS`
+  - `runtime.coordination.redis.inflight_timeout_ms` -> `BAYMAX_RUNTIME_COORDINATION_REDIS_INFLIGHT_TIMEOUT_MS`
+  - `runtime.coordination.mailbox_backend` -> `BAYMAX_RUNTIME_COORDINATION_MAILBOX_BACKEND`
+  - `runtime.coordination.instance_registry` -> `BAYMAX_RUNTIME_COORDINATION_INSTANCE_REGISTRY`
   - `scheduler.enabled` -> `BAYMAX_SCHEDULER_ENABLED`
   - `scheduler.backend` -> `BAYMAX_SCHEDULER_BACKEND`
   - `scheduler.lease_timeout` -> `BAYMAX_SCHEDULER_LEASE_TIMEOUT`
@@ -939,7 +952,7 @@ a2a baseline 校验语义：
 15. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
 
 mailbox baseline 校验语义：
-1. `mailbox.backend` 仅支持 `memory|file`。
+1. `mailbox.backend` 支持 `memory|file|redis`；`redis` 要求 `runtime.coordination.mailbox_backend=redis`（且 `runtime.coordination.backend=redis`）。
 2. `mailbox.backend=file` 时，`mailbox.path` 必须非空。
 3. `mailbox.retry.max_attempts` 必须 `> 0`。
 4. `mailbox.retry.backoff_initial` 必须 `>= 0`。
@@ -956,6 +969,16 @@ mailbox baseline 校验语义：
 15. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）。
 16. managed 编排路径下，`mailbox.enabled=false` 仍接线共享 memory mailbox runtime，不走 direct bypass。
 17. managed 编排路径下，`mailbox.enabled=true && mailbox.backend=file` 初始化失败时，允许 fallback 到 memory，并要求记录 deterministic reason：`mailbox.backend.file_init_failed`。
+
+runtime.coordination 校验语义（Redis 跨实例协调域）：
+1. `runtime.coordination.backend` 仅支持 `memory|file|redis`，默认 `memory`。
+2. `runtime.coordination.backend=file` 时，`runtime.coordination.file_dir` 必须非空。
+3. `runtime.coordination.backend=redis` 时，`runtime.coordination.redis.addr` 必须非空，且 `redis.lease_ttl_ms > 0`、`redis.inflight_timeout_ms > 0`、`redis.op_timeout_ms > 0`、`redis.op_timeout_ms < redis.lease_ttl_ms`。
+4. `runtime.coordination.mailbox_backend` 仅支持 `memory|file|redis`，默认 `memory`；`redis` 要求 `runtime.coordination.backend=redis`。
+5. `runtime.coordination.instance_registry` 仅支持 `disabled|redis`，默认 `disabled`；`redis` 要求 `runtime.coordination.backend=redis`。
+6. `redis.key_prefix` 默认 `baymax`；key 布局见 `docs/redis-coordination-guide.md`。
+7. 非法配置在启动与热更新阶段均 fail-fast（拒绝生效并回滚旧快照）；运行期 Redis 不可用时协调器与 mailbox Redis 后端 fail-closed（返回错误，不降级到 memory/file）。
+8. 协调诊断投影字段（additive + nullable + default）：`coordination_backend`、`coordination_scope`、`coordination_redis_reachable`、`coordination_lease_ttl_ms`、`mailbox_backend`、`instance_registry_backend`、`instance_id`、`session_affinity_state`。
 
 mailbox 诊断查询入口（Mailbox Unified Coordination）：
 1. `runtime/config.Manager.QueryMailbox(query)`：支持 `message_id/idempotency_key/correlation_id/kind/state/run_id/task_id/workflow_id/team_id/time_range` 过滤、默认 `page_size=50`、上限 `200`、默认 `time desc`、opaque cursor。

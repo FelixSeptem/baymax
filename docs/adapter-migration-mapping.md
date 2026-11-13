@@ -24,6 +24,8 @@
 | Tool adapter | 工具执行逻辑与业务主流程耦合 | 使用 `types.Tool` + `tool/local.Registry` 显式注册 | schema 变更需保持 additive 优先，破坏性变更需 fail-fast |
 | Memory adapter | 直接依赖 legacy file-based memory 路径 | 迁移到 `runtime.memory` + `memory SPI`（`external_spi|builtin_filesystem`） | mode/profile/contract_version 对齐；required op 缺失 fail-fast；optional op 允许 deterministic downgrade |
 | Adapter manifest | 接入前无统一兼容边界声明 | 为每个外部 adapter 提供 `adapter-manifest.json` 并在激活前校验 | `baymax_compat` 必须可解析；required fail-fast；optional downgrade 必须 deterministic |
+| Coordination backend（Redis 跨实例） | 进程内存/本机文件协调（`memory`/`file`），无法跨 pod 水平扩展 | 配置 `runtime.coordination.backend=redis`，注入 `core/sourcecoordination.Redis` 协调器 + `orchestration/mailbox.RedisStore` + `orchestration/instanceregistry.RedisRegistry` | key 全部带 `<prefix>` 命名空间隔离；运行期 Redis 不可用 fail-closed（`ErrRedisUnavailable`/`ErrOwnerUnavailable`），不静默降级；未配置时保持单实例语义 |
+| Resume cursor（Redis 跨实例） | 实时游标只存在进程内存（`engine.realtimeCursors` map） | `core/runner.WithCursorStore` 注入 `redisCursorStore`；出错自动回落进程内存 | resume cursor 是可丢便利数据，不承载准入决策；默认路径零语义变化 |
 
 ## Code-Snippet Mapping
 

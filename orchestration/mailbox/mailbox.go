@@ -19,7 +19,7 @@ type ErrUnsupportedBackend struct {
 }
 
 func (e ErrUnsupportedBackend) Error() string {
-	return fmt.Sprintf("mailbox backend must be one of [memory,file], got %q", strings.TrimSpace(e.Backend))
+	return fmt.Sprintf("mailbox backend must be one of [memory,file,redis], got %q", strings.TrimSpace(e.Backend))
 }
 
 type StoreInitResult struct {
@@ -32,6 +32,12 @@ type StoreInitResult struct {
 
 func NewStoreWithFallback(backend, path string, policy Policy, opts ...FileStoreOption) (StoreInitResult, error) {
 	return newStoreWithFallback(backend, path, policy, opts...)
+}
+
+// NewStoreWithRedisFallback initializes the store with an explicit Redis wiring
+// for the redis backend. The memory and file backends ignore redisCfg.
+func NewStoreWithRedisFallback(backend, path string, policy Policy, redisCfg RedisStoreConfig, opts ...FileStoreOption) (StoreInitResult, error) {
+	return newStoreWithFallbackConfig(backend, path, policy, redisCfg, opts...)
 }
 
 type Mailbox struct {

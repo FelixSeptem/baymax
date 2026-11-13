@@ -811,6 +811,10 @@ Invoke-RequiredParallelSteps -Steps @(
         Command   = { pwsh -File scripts/check-security-sandbox-contract.ps1 }
     },
     @{
+        StepLabel = "[quality-gate] redis cross-instance coordination contract"
+        Command   = { pwsh -File scripts/check-redis-coordination-contract.ps1 }
+    },
+    @{
         StepLabel = "[quality-gate] sandbox rollout governance contract suites"
         Command   = { pwsh -File scripts/check-sandbox-rollout-governance-contract.ps1 }
     },

@@ -11,6 +11,8 @@ import (
 
 	"github.com/FelixSeptem/baymax/core/sourcecoordination"
 	"github.com/FelixSeptem/baymax/core/types"
+	"github.com/alicebob/miniredis/v2"
+	"github.com/redis/go-redis/v9"
 )
 
 func ownerStoreSource(id string) types.SourceRef {
@@ -139,6 +141,42 @@ func TestOwnerStoreRejectsStaleWriterAfterFreshBinding(t *testing.T) {
 	}
 }
 
+func TestOpenOwnerStoreAdmitsCrossMachineWithRedisCoordinator(t *testing.T) {
+	mr := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = client.Close() })
+	source := ownerStoreSource("cross-machine")
+	coordinator, err := sourcecoordination.NewRedis(client, sourcecoordination.RedisOptions{
+		Options:   sourcecoordination.Options{OwnerNamespace: source.ID},
+		KeyPrefix: "test",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := OpenOwnerStore(OwnerStoreOptions{
+		Source:      source,
+		Coordinator: coordinator,
+		WriterID:    "writer-a",
+		LeaseTTL:    time.Hour,
+		DeploymentRequest: types.DeploymentRequest{
+			Profile: types.DeploymentProfileCrossMachine,
+		},
+	})
+	if err != nil {
+		t.Fatalf("redis-coordinated owner store = %v", err)
+	}
+	caps, err := store.Capabilities(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if caps.Deployment.Profile != types.DeploymentProfileCrossMachine || caps.Deployment.FencingScope != types.FencingScopeDistributed || caps.Deployment.TransactionScope != types.TransactionScopeDistributed {
+		t.Fatalf("cross-machine deployment scope = %+v", caps.Deployment)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestOwnerStoreDeploymentFixtureCoversFailClosedProfiles(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join("testdata", "owner_store_deployment.v1.json"))
 	if err != nil {
@@ -155,12 +193,19 @@ func TestOwnerStoreDeploymentFixtureCoversFailClosedProfiles(t *testing.T) {
 	if err := json.Unmarshal(raw, &fixture); err != nil {
 		t.Fatal(err)
 	}
-	if fixture.Version != "owner_store_deployment.v1" || len(fixture.Cases) != 7 {
+	if fixture.Version != "owner_store_deployment.v1" || len(fixture.Cases) != 8 {
 		t.Fatalf("fixture coverage = %#v", fixture)
 	}
+	admittedCrossMachine := false
 	for _, item := range fixture.Cases {
 		if item.Name == "" || item.Outcome == "" || item.SideEffects {
 			t.Fatalf("unsafe owner-store fixture case = %#v", item)
 		}
+		if item.Name == "cross_machine_redis_coordinator" && item.Outcome == "admitted" {
+			admittedCrossMachine = true
+		}
+	}
+	if !admittedCrossMachine {
+		t.Fatal("fixture must keep an admitted cross_machine case backed by a distributed coordinator")
 	}
 }

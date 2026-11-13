@@ -10,6 +10,14 @@
 blogs
 .worktrees/
 
+# 按运行批次命名的临时缓存目录（历史遗留写法，2026-10-29 起应统一走共享缓存目录）
+.gocache-*
+.gomodcache-*
+.golangci-cache-*
+.tmp-go-cache-*
+.tmp-golangci-cache-*
+.tmp-gocache-*
+
 # A23 scaffold offline temp outputs (generated during local tests)
 examples/adapters/_a23-offline-work/a23-offline-*/
 !examples/adapters/_a23-offline-work/.gitkeep

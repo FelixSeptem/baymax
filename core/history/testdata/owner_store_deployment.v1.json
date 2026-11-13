@@ -7,6 +7,7 @@
     {"name": "stale_lease", "profile": "multi_instance", "outcome": "stale_writer", "side_effects": false},
     {"name": "coordinator_outage", "profile": "multi_instance", "outcome": "source_unavailable", "side_effects": false},
     {"name": "cross_machine_request", "profile": "cross_machine", "outcome": "deployment_unsupported", "side_effects": false},
+    {"name": "cross_machine_redis_coordinator", "profile": "cross_machine", "fencing": "distributed", "transaction": "distributed", "outcome": "admitted", "side_effects": false},
     {"name": "projection_non_atomic", "profile": "same_host_single_writer_sequential_reopen", "outcome": "recovery_required", "side_effects": false}
   ]
 }

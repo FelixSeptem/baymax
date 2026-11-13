@@ -578,6 +578,24 @@ func (s *realtimeSessionRuntime) validResumeCursor(cursor string) bool {
 	return ok && stored == cursor
 }
 
+// cursorOpTimeout bounds a single cursor-store roundtrip so a slow distributed
+// backend can never block the realtime protocol loop.
+const cursorOpTimeout = 2 * time.Second
+
+// cursorStores returns the primary and in-process fallback cursor stores. With
+// no injection the primary IS the in-process store, preserving legacy
+// behavior; with an injection the fallback keeps resume cursors working when
+// the distributed backend is degraded.
+func (e *Engine) cursorStores() (CursorStore, CursorStore) {
+	if e == nil || e.memoryCursorStore == nil {
+		return nil, nil
+	}
+	if e.cursorStore != nil {
+		return e.cursorStore, e.memoryCursorStore
+	}
+	return e.memoryCursorStore, nil
+}
+
 func (s *realtimeSessionRuntime) storeCursor(cursor string) {
 	if s == nil || s.engine == nil || strings.TrimSpace(s.sessionID) == "" {
 		return
@@ -586,14 +604,15 @@ func (s *realtimeSessionRuntime) storeCursor(cursor string) {
 	if ttl <= 0 {
 		return
 	}
-	s.engine.realtimeCursorMu.Lock()
-	defer s.engine.realtimeCursorMu.Unlock()
-	if s.engine.realtimeCursors == nil {
-		s.engine.realtimeCursors = map[string]realtimeCursorRecord{}
+	primary, fallback := s.engine.cursorStores()
+	if primary == nil {
+		return
 	}
-	s.engine.realtimeCursors[s.sessionID] = realtimeCursorRecord{
-		Cursor:    cursor,
-		ExpiresAt: s.now().Add(ttl),
+	expiresAt := s.now().Add(ttl)
+	ctx, cancel := context.WithTimeout(context.Background(), cursorOpTimeout)
+	defer cancel()
+	if err := primary.Save(ctx, s.sessionID, cursor, expiresAt); err != nil && fallback != nil {
+		_ = fallback.Save(context.Background(), s.sessionID, cursor, expiresAt)
 	}
 }
 
@@ -601,17 +620,20 @@ func (s *realtimeSessionRuntime) loadCursor() (string, bool) {
 	if s == nil || s.engine == nil || strings.TrimSpace(s.sessionID) == "" {
 		return "", false
 	}
-	s.engine.realtimeCursorMu.Lock()
-	defer s.engine.realtimeCursorMu.Unlock()
-	record, ok := s.engine.realtimeCursors[s.sessionID]
-	if !ok {
+	primary, fallback := s.engine.cursorStores()
+	if primary == nil {
 		return "", false
 	}
-	if !record.ExpiresAt.IsZero() && !record.ExpiresAt.After(s.now()) {
-		delete(s.engine.realtimeCursors, s.sessionID)
+	ctx, cancel := context.WithTimeout(context.Background(), cursorOpTimeout)
+	defer cancel()
+	cursor, ok, err := primary.Load(ctx, s.sessionID, s.now())
+	if err != nil && fallback != nil {
+		cursor, ok, err = fallback.Load(context.Background(), s.sessionID, s.now())
+	}
+	if err != nil || !ok {
 		return "", false
 	}
-	return strings.TrimSpace(record.Cursor), strings.TrimSpace(record.Cursor) != ""
+	return cursor, cursor != ""
 }
 
 func (s *realtimeSessionRuntime) fail(code string, layer string, message string) error {

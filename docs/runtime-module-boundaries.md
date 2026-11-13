@@ -273,6 +273,26 @@ validate capability evidence and delegate to those owners, but cannot create a
 second queue, scheduler, journal, worker, retry loop, or checkpoint store.
 Composite restore is only advertised when the matching owner namespace,
 deployment scope and evidence reference are present.
+
+## Redis cross-instance coordination boundary
+
+`core/sourcecoordination` owns the source-owner fencing/CAS contract and its
+Redis backend; `orchestration/mailbox` owns message delivery and its Redis
+backend; `orchestration/instanceregistry` owns instance heartbeat TTL and
+session→instance affinity; `core/runner` consumes only the `CursorStore`
+interface and never imports Redis directly. `runtime/config` is the single
+switch source (`runtime.coordination.*`); `env > file > default` precedence and
+fail-fast hot-update rollback apply unchanged.
+
+Dependency rules: the Redis client is injected (no package-level singleton
+pool); `orchestration/instanceregistry` must not import mailbox or runner
+internals; mailbox RedisStore reuses the shared `mailboxState` machine instead
+of a second state machine; no component may advertise `cross_machine`
+deployment scope unless its backend self-certifies (ping + key readable) and
+falls back to unsupported otherwise. The registry stores affinity facts only —
+routing/forwarding stays with the host, and no HTTP/LB/control-plane logic is
+permitted in this repo. Rolling back the Redis wiring restores the memory/file
+posture without data migration.
 # Host execution plan bridge boundary
 
 `orchestration/planbridge` may validate bounded descriptors and delegate exactly once to runner, teams, workflow or a private local composer/scheduler owner. It must not acquire a shared queue, create a worker, own retry/budget/terminal/recovery state, write `RuntimeRecorder`, or import MCP transports. `tool/diagnosticsreplay` consumes only bounded reference fixtures and never receives executable binding references.

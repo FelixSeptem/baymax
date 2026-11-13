@@ -1,6 +1,6 @@
 # Archive Index
 
-Updated: 2026-11-13 14:31:59
+Updated: 2026-11-13 17:56:52
 
 - 001 -> build-go-agent-loop-framework
 - 002 -> upgrade-openai-native-stream-mapping
@@ -201,3 +201,4 @@ Updated: 2026-11-13 14:31:59
 - 197 -> refresh-upstream-findings-current-pin
 - 198 -> mailbox-agent-pause-restore-boundary
 - 199 -> introduce-mainstream-sandbox-executor-backends
+- 200 -> redis-message-bridge-cross-instance

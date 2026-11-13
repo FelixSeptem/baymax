@@ -68,6 +68,8 @@ type Engine struct {
 	capCache            map[string]cachedCapabilities
 	realtimeCursorMu    sync.Mutex
 	realtimeCursors     map[string]realtimeCursorRecord
+	cursorStore         CursorStore
+	memoryCursorStore   *memoryCursorStore
 	handoffBoundaryMu   sync.Mutex
 	handoffBoundaries   map[string]handoffBoundary
 	handoffResolver     handoff.Resolver
@@ -147,10 +149,24 @@ func New(model types.ModelClient, opts ...Option) *Engine {
 		}),
 	)
 	e.registerModel(model)
+	e.memoryCursorStore = newMemoryCursorStore(e.realtimeCursors, &e.realtimeCursorMu)
 	for _, opt := range opts {
 		opt(e)
 	}
 	return e
+}
+
+// WithCursorStore injects a distributed resume-cursor store (for example
+// Redis) so a resumed stream can be served by a different instance. A nil
+// injection keeps the in-process store; runtime errors on the injected store
+// fall back to the in-process store without interrupting Run/Stream.
+func WithCursorStore(store CursorStore) Option {
+	return func(e *Engine) {
+		if e == nil || store == nil {
+			return
+		}
+		e.cursorStore = store
+	}
 }
 
 // WithLocalRegistry enables local tool dispatch backed by the provided tool registry.

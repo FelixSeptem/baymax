@@ -71,6 +71,20 @@ pwsh -File scripts/check-docs-consistency.ps1
 - 下一个提案必须从最新基准分支重新切出新功能分支。未合并分支不得删除，除非已明确放弃对应提案。
 - 未跟踪缓存、测试输出和临时运行产物不属于分支清理范围，除非用户另行要求清理。
 
+10. 构建缓存必须走共享目录（禁止按批次新建缓存目录）
+- 统一位置（机器级 `go env` 已配置，shell profile 已导出同名环境变量）：
+  - `GOCACHE` → `D:\GoCache\gocache`
+  - `GOMODCACHE` → `D:\Go\path\pkg\mod`
+  - `GOLANGCI_LINT_CACHE` → `D:\GoCache\golangci-cache`
+- Go 按内容哈希寻址，多个项目/多个 worktree 共用同一个缓存目录是安全的；
+  Go 每次使用缓存时会自动裁剪 5 天未访问的条目，因此共享目录不会无限增长。
+- **禁止** `GOCACHE=.gocache-<批次名> go test ...` 这类在仓库内按批次新建缓存目录的写法。
+  该写法历史上累积出 200+ 个缓存目录、占用约 160 GB 磁盘。
+- 确需隔离构建时，只允许指向共享目录下的子目录（如 `D:\GoCache\gocache\ci-<name>`），
+  且跑完立即清理；仓库内一律不落缓存目录。
+- `.gitignore` 已覆盖 `.gocache-*` / `.gomodcache-*` / `.golangci-cache-*`，
+  但它们是历史遗留写法，不应再出现。
+
 ## 架构硬约束（不可绕过）
 
 - `runtime/*` 禁止依赖 `mcp/http` 或 `mcp/stdio`

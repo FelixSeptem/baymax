@@ -121,6 +121,31 @@ not context injection and not a host business-commit claim.
 
 The bridge rejects invalid, unknown, stale and non-equivalent duplicate requests before mailbox mutation; exact duplicates converge through source-owned identity. Rollback stops new bridge calls and preserves pending message/outbox/effect facts for host reconciliation. See the archived [proposal](../../openspec/changes/archive/166-establish-application-outbox-mailbox-recovery-contract/proposal.md) and [verification](../../openspec/changes/archive/166-establish-application-outbox-mailbox-recovery-contract/verification.md).
 
+## Redis backend (cross-instance)
+
+`RedisStore` implements the full `Store` interface on an injected
+`redis.UniversalClient`. It reuses the same `mailboxState` state machine as the
+memory and file backends — semantics (idempotent publish, inflight ownership,
+lease reclaim, retry backoff, DLQ, lifecycle events) are byte-identical by
+construction. Redis provides two things only: durable persistence of the
+serialized state document and a short-lived distributed lock (Lua
+compare-token-release) that serializes mutations across instances.
+
+- Construct with `NewRedisStore(RedisStoreConfig{...}, policy)` or
+  `NewStoreWithRedisFallback("redis", ...)`. The redis backend fails fast on
+  invalid wiring instead of silently degrading to memory.
+- Runtime unavailability returns `ErrRedisUnavailable` (fail-closed); callers
+  must not downgrade a cross-instance deployment to single-instance silently.
+- Keys are namespaced: `<prefix>:mailbox:<namespace>:state` and
+  `...:lock` (prefix default `baymax:mailbox`).
+- `DrainLifecycleEvents`/`SetLifecycleTracing`/`MarkFallback` keep the same
+  contract as the other backends; events emitted during a mutation are
+  collected locally after the state is persisted.
+
+The three-backend contract battery (`store_contract_test.go`) runs identical
+table-driven assertions against `MemoryStore`, `FileStore` and `RedisStore`.
+Configuration entry point: `runtime.coordination.mailbox_backend`.
+
 ## Verification
 
 Existing mailbox behavior is covered by the mailbox lifecycle and integration

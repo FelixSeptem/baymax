@@ -1,0 +1,12 @@
+Set-PSReadLineOption: C:\Users\whenh\.powershell\profile.ps1:88
+Line |
+  88 |  鈥?yAndPlugin } catch { Set-PSReadLineOption -PredictionSource History }
+     |                         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+     | The predictive suggestion feature cannot be enabled because the console
+     | output doesn't support virtual terminal processing or it's redirected.
+[source-history-store-contract] owner binding, fencing, bounded replay and reconciliation
+ok  	github.com/FelixSeptem/baymax/core/history	0.542s
+ok  	github.com/FelixSeptem/baymax/core/sourcecoordination	0.383s [no tests to run]
+ok  	github.com/FelixSeptem/baymax/core/types	0.951s
+ok  	github.com/FelixSeptem/baymax/tool/diagnosticsreplay	1.503s
+[source-history-store-contract] passed

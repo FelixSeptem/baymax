@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-export GOCACHE="${PWD}/.gocache-scenario-contract"
+if [[ -z "${GOCACHE:-}" ]]; then
+  export GOCACHE="${PWD}/.gocache"
+fi
 
 echo "[scenario-simulation] offline contract tests"
 go test ./integration/scenariosimulation -count=1

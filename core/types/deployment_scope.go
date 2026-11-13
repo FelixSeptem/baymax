@@ -135,6 +135,28 @@ func CoordinatedMultiInstanceScope(owner, evidence string) DeploymentScope {
 	}
 }
 
+// CoordinatedCrossMachineScope identifies an explicit distributed coordinator
+// (for example Redis) that provides fencing and revision-checked CAS across
+// machines. It must never be inferred from a file path, a successful local
+// reopen or a single-process lease.
+func CoordinatedCrossMachineScope(owner, evidence string) DeploymentScope {
+	owner = strings.TrimSpace(owner)
+	if owner == "" {
+		owner = "source-owner"
+	}
+	return DeploymentScope{
+		Version:           DeploymentScopeVersion,
+		Profile:           DeploymentProfileCrossMachine,
+		WriterScope:       WriterScopeMultiWriter,
+		FencingScope:      FencingScopeDistributed,
+		TransactionScope:  TransactionScopeDistributed,
+		OwnerNamespace:    owner,
+		WriterFence:       "distributed:" + owner,
+		EvidenceReference: strings.TrimSpace(evidence),
+		Supported:         true,
+	}
+}
+
 func (s DeploymentScope) Validate() error {
 	if s.Version != DeploymentScopeVersion {
 		return fmt.Errorf("deployment scope version: %w", ErrDeploymentUnsupported)
@@ -158,8 +180,11 @@ func (s DeploymentScope) Validate() error {
 		return nil
 	}
 	local := s.Profile == DeploymentProfileSameHostSingleWriterSequentialReopen && s.WriterScope == WriterScopeSingleWriter && s.FencingScope == FencingScopeSourceOwner && s.TransactionScope == TransactionScopeSequentialReopen
-	coordinated := s.Profile == DeploymentProfileMultiInstance && s.WriterScope == WriterScopeMultiWriter && (s.FencingScope == FencingScopeDistributed || s.FencingScope == FencingScopeSourceOwner) && s.TransactionScope == TransactionScopeMultiWriterCAS
-	if !local && !coordinated {
+	coordinatedLocal := s.Profile == DeploymentProfileMultiInstance && s.WriterScope == WriterScopeMultiWriter && (s.FencingScope == FencingScopeDistributed || s.FencingScope == FencingScopeSourceOwner) && s.TransactionScope == TransactionScopeMultiWriterCAS
+	// Cross-machine claims require distributed fencing and a distributed
+	// transaction scope; source-owner fencing is only same-host evidence.
+	coordinatedCrossMachine := s.Profile == DeploymentProfileCrossMachine && s.WriterScope == WriterScopeMultiWriter && s.FencingScope == FencingScopeDistributed && s.TransactionScope == TransactionScopeDistributed
+	if !local && !coordinatedLocal && !coordinatedCrossMachine {
 		return fmt.Errorf("deployment scope has no source evidence: %w", ErrDeploymentUnsupported)
 	}
 	return nil

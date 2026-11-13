@@ -348,6 +348,12 @@ if ! bash scripts/check-security-sandbox-contract.sh; then
   exit 1
 fi
 
+echo "[quality-gate] redis cross-instance coordination contract"
+if ! bash scripts/check-redis-coordination-contract.sh; then
+  echo "[quality-gate][redis-coordination-contract] redis cross-instance coordination contract failed"
+  exit 1
+fi
+
 echo "[quality-gate] sandbox rollout governance contract suites"
 if ! bash scripts/check-sandbox-rollout-governance-contract.sh; then
   echo "[quality-gate][sandbox-rollout-governance-contract] sandbox rollout governance contract suites failed"

@@ -118,6 +118,7 @@ const (
 	AsyncReconcileNotFoundKeepTimeout  = "keep_until_timeout"
 	MailboxBackendMemory               = "memory"
 	MailboxBackendFile                 = "file"
+	MailboxBackendRedis                = "redis"
 	MailboxWorkerHandlerErrorRequeue   = "requeue"
 	MailboxWorkerHandlerErrorNack      = "nack"
 	MailboxWorkerPanicPolicyFollow     = "follow_handler_error_policy"
@@ -317,6 +318,7 @@ type RuntimeDomainConfig struct {
 	Eval              RuntimeEvalConfig              `json:"eval"`
 	Diagnostics       RuntimeDiagnosticsConfig       `json:"diagnostics"`
 	Memory            RuntimeMemoryConfig            `json:"memory"`
+	Coordination      RuntimeCoordinationConfig      `json:"coordination"`
 }
 
 // RuntimeProviderCatalogConfig controls the optional host-injected model catalog.
@@ -1304,6 +1306,7 @@ func DefaultConfig() Config {
 			},
 		},
 		Runtime: RuntimeDomainConfig{
+			Coordination: DefaultRuntimeCoordinationConfig(),
 			React: RuntimeReactConfig{
 				Enabled:                   true,
 				MaxIterations:             12,
@@ -2690,17 +2693,25 @@ func Validate(cfg Config) error {
 	if cfg.A2A.AsyncReporting.Retry.BackoffMax < cfg.A2A.AsyncReporting.Retry.BackoffInitial {
 		return errors.New("a2a.async_reporting.retry.backoff_max must be >= a2a.async_reporting.retry.backoff_initial")
 	}
+	if err := ValidateRuntimeCoordinationConfig(cfg.Runtime.Coordination); err != nil {
+		return err
+	}
 	switch backend := strings.ToLower(strings.TrimSpace(cfg.Mailbox.Backend)); backend {
 	case MailboxBackendMemory:
 	case MailboxBackendFile:
 		if strings.TrimSpace(cfg.Mailbox.Path) == "" {
 			return errors.New("mailbox.path is required when mailbox.backend=file")
 		}
+	case MailboxBackendRedis:
+		if strings.ToLower(strings.TrimSpace(cfg.Runtime.Coordination.MailboxBackend)) != MailboxBackendRedis {
+			return errors.New("mailbox.backend=redis requires runtime.coordination.mailbox_backend=redis with runtime.coordination.backend=redis")
+		}
 	default:
 		return fmt.Errorf(
-			"mailbox.backend must be one of [%s,%s], got %q",
+			"mailbox.backend must be one of [%s,%s,%s], got %q",
 			MailboxBackendMemory,
 			MailboxBackendFile,
+			MailboxBackendRedis,
 			cfg.Mailbox.Backend,
 		)
 	}
@@ -4527,6 +4538,19 @@ func applyDefaults(v *viper.Viper) {
 	v.SetDefault("runtime.realtime.interrupt_resume.enabled", base.Runtime.Realtime.InterruptResume.Enabled)
 	v.SetDefault("runtime.realtime.interrupt_resume.resume_cursor_ttl_ms", base.Runtime.Realtime.InterruptResume.ResumeCursorTTLMS)
 	v.SetDefault("runtime.realtime.interrupt_resume.idempotency_window_ms", base.Runtime.Realtime.InterruptResume.IdempotencyWindowMS)
+	v.SetDefault("runtime.coordination.backend", base.Runtime.Coordination.Backend)
+	v.SetDefault("runtime.coordination.file_dir", base.Runtime.Coordination.FileDir)
+	v.SetDefault("runtime.coordination.redis.addr", base.Runtime.Coordination.Redis.Addr)
+	v.SetDefault("runtime.coordination.redis.username", base.Runtime.Coordination.Redis.Username)
+	v.SetDefault("runtime.coordination.redis.password", base.Runtime.Coordination.Redis.Password)
+	v.SetDefault("runtime.coordination.redis.db", base.Runtime.Coordination.Redis.DB)
+	v.SetDefault("runtime.coordination.redis.dial_timeout_ms", base.Runtime.Coordination.Redis.DialTimeoutMS)
+	v.SetDefault("runtime.coordination.redis.op_timeout_ms", base.Runtime.Coordination.Redis.OpTimeoutMS)
+	v.SetDefault("runtime.coordination.redis.key_prefix", base.Runtime.Coordination.Redis.KeyPrefix)
+	v.SetDefault("runtime.coordination.redis.lease_ttl_ms", base.Runtime.Coordination.Redis.LeaseTTLMS)
+	v.SetDefault("runtime.coordination.redis.inflight_timeout_ms", base.Runtime.Coordination.Redis.InflightTimeoutMS)
+	v.SetDefault("runtime.coordination.mailbox_backend", base.Runtime.Coordination.MailboxBackend)
+	v.SetDefault("runtime.coordination.instance_registry", base.Runtime.Coordination.InstanceRegistry)
 	v.SetDefault("runtime.context.jit.reference_first.enabled", base.Runtime.Context.JIT.ReferenceFirst.Enabled)
 	v.SetDefault("runtime.context.jit.reference_first.max_refs", base.Runtime.Context.JIT.ReferenceFirst.MaxRefs)
 	v.SetDefault("runtime.context.jit.reference_first.max_resolve_tokens", base.Runtime.Context.JIT.ReferenceFirst.MaxResolveTokens)
@@ -5224,6 +5248,26 @@ func buildConfig(v *viper.Viper) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	coordinationRedisDB, err := strictIntConfigValue(v, "runtime.coordination.redis.db")
+	if err != nil {
+		return Config{}, err
+	}
+	coordinationRedisDialTimeoutMS, err := strictIntConfigValue(v, "runtime.coordination.redis.dial_timeout_ms")
+	if err != nil {
+		return Config{}, err
+	}
+	coordinationRedisOpTimeoutMS, err := strictIntConfigValue(v, "runtime.coordination.redis.op_timeout_ms")
+	if err != nil {
+		return Config{}, err
+	}
+	coordinationRedisLeaseTTLMS, err := strictIntConfigValue(v, "runtime.coordination.redis.lease_ttl_ms")
+	if err != nil {
+		return Config{}, err
+	}
+	coordinationRedisInflightTimeoutMS, err := strictIntConfigValue(v, "runtime.coordination.redis.inflight_timeout_ms")
+	if err != nil {
+		return Config{}, err
+	}
 	contextJITReferenceFirstEnabled, err := strictBoolConfigValue(v, "runtime.context.jit.reference_first.enabled")
 	if err != nil {
 		return Config{}, err
@@ -5337,6 +5381,19 @@ func buildConfig(v *viper.Viper) (Config, error) {
 	cfg.Runtime.Realtime.InterruptResume.Enabled = realtimeInterruptResumeEnabled
 	cfg.Runtime.Realtime.InterruptResume.ResumeCursorTTLMS = realtimeResumeCursorTTLMS
 	cfg.Runtime.Realtime.InterruptResume.IdempotencyWindowMS = realtimeIdempotencyWindowMS
+	cfg.Runtime.Coordination.Backend = strings.ToLower(strings.TrimSpace(v.GetString("runtime.coordination.backend")))
+	cfg.Runtime.Coordination.FileDir = strings.TrimSpace(v.GetString("runtime.coordination.file_dir"))
+	cfg.Runtime.Coordination.Redis.Addr = strings.TrimSpace(v.GetString("runtime.coordination.redis.addr"))
+	cfg.Runtime.Coordination.Redis.Username = strings.TrimSpace(v.GetString("runtime.coordination.redis.username"))
+	cfg.Runtime.Coordination.Redis.Password = v.GetString("runtime.coordination.redis.password")
+	cfg.Runtime.Coordination.Redis.DB = coordinationRedisDB
+	cfg.Runtime.Coordination.Redis.DialTimeoutMS = coordinationRedisDialTimeoutMS
+	cfg.Runtime.Coordination.Redis.OpTimeoutMS = coordinationRedisOpTimeoutMS
+	cfg.Runtime.Coordination.Redis.KeyPrefix = strings.TrimSpace(v.GetString("runtime.coordination.redis.key_prefix"))
+	cfg.Runtime.Coordination.Redis.LeaseTTLMS = coordinationRedisLeaseTTLMS
+	cfg.Runtime.Coordination.Redis.InflightTimeoutMS = coordinationRedisInflightTimeoutMS
+	cfg.Runtime.Coordination.MailboxBackend = strings.ToLower(strings.TrimSpace(v.GetString("runtime.coordination.mailbox_backend")))
+	cfg.Runtime.Coordination.InstanceRegistry = strings.ToLower(strings.TrimSpace(v.GetString("runtime.coordination.instance_registry")))
 	cfg.Runtime.Context.JIT.ReferenceFirst.Enabled = contextJITReferenceFirstEnabled
 	cfg.Runtime.Context.JIT.ReferenceFirst.MaxRefs = contextJITReferenceFirstMaxRefs
 	cfg.Runtime.Context.JIT.ReferenceFirst.MaxResolveTokens = contextJITReferenceFirstMaxResolveTokens

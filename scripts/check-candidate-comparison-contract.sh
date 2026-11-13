@@ -2,7 +2,7 @@
 set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
-export GOCACHE="${BAYMAX_CANDIDATE_COMPARISON_GOCACHE:-$repo_root/.gocache-candidate-comparison}"
+export GOCACHE="${BAYMAX_CANDIDATE_COMPARISON_GOCACHE:-${GOCACHE:-$repo_root/.gocache-candidate-comparison}}"
 if [[ $# -gt 0 ]]; then
   export BAYMAX_CANDIDATE_COMPARISON_FIXTURE="$1"
 fi

@@ -108,6 +108,44 @@ type MailboxDiagnosticRecord struct {
 	PanicRecovered        bool
 }
 
+// CoordinationDiagnosticRecord is the additive projection for the runtime
+// coordination domain. Pointer fields are nil when a fact is unknown so the
+// JSON schema stays additive + nullable + default.
+type CoordinationDiagnosticRecord struct {
+	Time                    time.Time
+	CoordinationBackend     string `json:"coordination_backend,omitempty"`
+	CoordinationScope       string `json:"coordination_scope,omitempty"`
+	CoordinationRedisReach  *bool  `json:"coordination_redis_reachable,omitempty"`
+	CoordinationLeaseTTLMS  *int   `json:"coordination_lease_ttl_ms,omitempty"`
+	MailboxBackend          string `json:"mailbox_backend,omitempty"`
+	InstanceRegistryBackend string `json:"instance_registry_backend,omitempty"`
+	InstanceID              string `json:"instance_id,omitempty"`
+	SessionID               string `json:"session_id,omitempty"`
+	SessionAffinityState    string `json:"session_affinity_state,omitempty"`
+}
+
+// RecordCoordinationDiagnostic stores one coordination projection record.
+func (m *Manager) RecordCoordinationDiagnostic(rec CoordinationDiagnosticRecord) {
+	if m == nil {
+		return
+	}
+	// The diagnostics store is typed per domain; until the coordination domain
+	// gains its own ring buffer the record is normalized into the generic
+	// mailbox record channel so operators see it in the same diagnostic view.
+	mailbox := MailboxDiagnosticRecord{
+		Time:              rec.Time,
+		Backend:           rec.MailboxBackend,
+		ConfiguredBackend: rec.CoordinationBackend,
+	}
+	if rec.InstanceID != "" {
+		mailbox.ConsumerID = rec.InstanceID
+	}
+	if rec.SessionAffinityState != "" {
+		mailbox.ReasonCode = "coordination.affinity." + strings.TrimSpace(rec.SessionAffinityState)
+	}
+	m.RecordMailboxDiagnostic(mailbox)
+}
+
 // NewManager builds a runtime config manager with env/file/default precedence and optional hot reload.
 func NewManager(opts ManagerOptions) (*Manager, error) {
 	loadOpts := LoadOptions{FilePath: opts.FilePath, EnvPrefix: opts.EnvPrefix}

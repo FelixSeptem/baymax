@@ -90,6 +90,24 @@ manifest 片段（profile declaration + manifest snippet）：
 - 失败分类冻结为 `launch_failed` / `capability_mismatch` / `timeout` / `oom` / `egress_denied` / `backend_unavailable`，复用既有 `sandbox-*-matrix`，不新建平行契约。
 - 云端 adapter 真实调用需 docker 起本地服务（见 `openspec/changes/introduce-mainstream-sandbox-executor-backends`）；本仓不内置生产级隔离执行器。
 
+## Redis Cross-Instance Coordination Backends（新增，redis-message-bridge-cross-instance）
+
+Redis 协调栈是「注入式 backend」而非 adapter manifest：client 由调用方持有
+（`redis.UniversalClient`），四个组件共享同一连接池与 key 前缀命名空间。
+真实 Redis 可用 docker 起本地服务：`docker run -p 6379:6379 redis`，
+集成测试读 `BAYMAX_TEST_REDIS_ADDR`，未配置时标记 `skipped-unconfigured`。
+
+| 组件 | 注入点 | 契约 | Gate |
+| --- | --- | --- | --- |
+| `sourcecoordination.Redis` | `core/history.OwnerStoreOptions.Coordinator` 等显式注入点 | `Coordinator` / `LeaseValidator` | `scripts/check-redis-coordination-contract.ps1` |
+| `mailbox.RedisStore` | `mailbox.NewStoreWithRedisFallback("redis", ...)` | `mailbox.Store` | 同上 |
+| `runner.redisCursorStore` | `runner.WithCursorStore(...)` | `runner.CursorStore` | 同上 |
+| `instanceregistry.RedisRegistry` | 宿主路由层显式构造 | `instanceregistry.Registry` | 同上 |
+
+Offline onboarding 示例：`examples/redis-cross-instance`（miniredis 内嵌，
+打印稳定 marker）。配置入口 `runtime.coordination.*`，详见
+`docs/redis-coordination-guide.md`。
+
 ## MCP Adapter Template（P1）
 
 最小可运行片段（`examples/templates/mcp-adapter-template/main.go`）展示：
